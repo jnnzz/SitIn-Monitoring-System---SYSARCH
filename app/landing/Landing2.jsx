@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { Particles } from '@/components/ui/particles'
 import { BorderBeam } from '@/components/ui/border-beam'
@@ -11,11 +12,165 @@ import { RetroGrid } from '@/components/ui/retro-grid'
 import uc from './../assets/uclogo.png';
 import ccs from './../assets/ccslogo.png';
 import { MonitorCheck, BarChart3, BellRing, ShieldCheck } from 'lucide-react'
+
+const API_URL = 'http://localhost:5000/api'
+
 export default function Landing() {
+  const router = useRouter()
   const [tab, setTab] = useState('login')
   const [showPass, setShowPass] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [showRegPass, setShowRegPass] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  // Login state
+  const [loginData, setLoginData] = useState({
+    email: '',
+    password: ''
+  })
+
+  // Register state
+  const [registerData, setRegisterData] = useState({
+    firstName: '',
+    middleName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    course: '',
+    yearLevel: '',
+    studentId: '',
+    address: '',
+    agreeTerms: false
+  })
+
+  // Handle login input change
+  const handleLoginChange = (e) => {
+    const { name, value } = e.target
+    setLoginData(prev => ({
+      ...prev,
+      [name]: value
+    }))
+  }
+
+  // Handle register input change
+  const handleRegisterChange = (e) => {
+    const { name, value, type, checked } = e.target
+    setRegisterData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }))
+  }
+
+  // Handle login submit
+  const handleLoginSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSuccess('')
+
+    if (!loginData.email || !loginData.password) {
+      setError('Email and password required')
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: loginData.email,
+          password: loginData.password
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setSuccess('✅ Login successful! Redirecting...')
+        localStorage.setItem('token', data.token)
+        localStorage.setItem('user', JSON.stringify(data.user))
+        setTimeout(() => {
+          router.push('/dashboard')
+        }, 1500)
+      } else {
+        setError(data.error || 'Login failed')
+      }
+    } catch (err) {
+      setError('Connection error. Is backend running on port 5000?')
+      console.error('Error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Handle register submit
+  const handleRegisterSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSuccess('')
+
+    // Validation
+    if (!registerData.firstName || !registerData.lastName || !registerData.email || !registerData.password) {
+      setError('Please fill all required fields')
+      return
+    }
+
+    if (registerData.password.length < 6) {
+      setError('Password must be at least 6 characters')
+      return
+    }
+
+    if (registerData.password !== registerData.confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+
+    if (!registerData.agreeTerms) {
+      setError('Please agree to Terms of Service and Privacy Policy')
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      const full_name = `${registerData.firstName} ${registerData.middleName} ${registerData.lastName}`.trim()
+
+      const response = await fetch(`${API_URL}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: registerData.email,
+          password: registerData.password,
+          full_name: full_name,
+          course: registerData.course,
+          year_level: registerData.yearLevel,
+          address: registerData.address
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setSuccess('Registration successful! Redirecting...')
+        localStorage.setItem('token', data.token)
+        localStorage.setItem('user', JSON.stringify(data.user))
+        setTimeout(() => {
+          router.push('/dashboard')
+        }, 1500)
+      } else {
+        setError(data.error || 'Registration failed')
+      }
+    } catch (err) {
+      setError('Connection error. Is backend running on port 5000?')
+      console.error('Error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <div
@@ -206,10 +361,34 @@ export default function Landing() {
                 <h2 className="text-white text-xl font-black mb-1">Welcome back</h2>
                 <p className="text-xs mb-6" style={{ color: 'rgba(255,255,255,0.4)' }}>Sign in to your dashboard</p>
 
-                <form className="flex flex-col gap-4" onSubmit={e => e.preventDefault()}>
+                {/* Error Message */}
+                {error && (
+                  <div className="p-3 rounded-lg text-sm font-medium mb-4" style={{ backgroundColor: '#2d1a1a', color: '#ff6b6b', border: '1px solid #ff6b6b' }}>
+                    {error}
+                  </div>
+                )}
+
+                {/* Success Message */}
+                {success && (
+                  <div className="p-3 rounded-lg text-sm font-medium mb-4" style={{ backgroundColor: '#1a2d1a', color: '#51cf66', border: '1px solid #51cf66' }}>
+                    {success}
+                  </div>
+                )}
+
+                <form className="flex flex-col gap-4" onSubmit={handleLoginSubmit}>
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Student ID </label>
-                    <input type="" placeholder="Enter your student ID" className="inp w-full rounded-xl px-4 py-3 text-sm text-white" style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} />
+                    <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Email Address</label>
+                    <input 
+                      type="email" 
+                      name="email"
+                      placeholder="you@uc.edu.ph" 
+                      value={loginData.email}
+                      onChange={handleLoginChange}
+                      disabled={loading}
+                      className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
+                      style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
+                      required
+                    />
                   </div>
 
                   <div className="flex flex-col gap-1.5">
@@ -218,8 +397,22 @@ export default function Landing() {
                       <a href="#" className="text-xs font-semibold" style={{ color: '#B153D7', textDecoration: 'none' }}>Forgot Password?</a>
                     </div>
                     <div className="relative">
-                      <input type={showPass ? 'text' : 'password'} placeholder="••••••••" className="inp w-full rounded-xl px-4 py-3 text-sm text-white pr-16" style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} />
-                      <button type="button" onClick={() => setShowPass(s => !s)} className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold" style={{ color: '#4D2FB2', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif' }}>
+                      <input 
+                        type={showPass ? 'text' : 'password'} 
+                        name="password"
+                        placeholder="••••••••" 
+                        value={loginData.password}
+                        onChange={handleLoginChange}
+                        disabled={loading}
+                        className="inp w-full rounded-xl px-4 py-3 text-sm text-white pr-16" 
+                        style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
+                        required
+                      />
+                      <button 
+                        type="button" 
+                        onClick={() => setShowPass(s => !s)} 
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold" 
+                        style={{ color: '#4D2FB2', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif' }}>
                         {showPass ? 'Hide' : 'Show'}
                       </button>
                     </div>
@@ -230,14 +423,20 @@ export default function Landing() {
                     <label htmlFor="remember" className="text-xs font-medium cursor-pointer" style={{ color: 'rgba(255,255,255,0.4)' }}>Remember me for 30 days</label>
                   </div>
 
-                  <ShimmerButton className="w-full py-3 rounded-xl text-sm font-bold mt-1" background="#0E21A0" shimmerColor="#4D2FB2" shimmerSize="0.1em">
-                    Sign In
+                  <ShimmerButton 
+                    className="w-full py-3 rounded-xl text-sm font-bold mt-1" 
+                    background={loading ? "#4D2FB2" : "#0E21A0"} 
+                    shimmerColor="#4D2FB2" 
+                    shimmerSize="0.1em"
+                    disabled={loading}
+                  >
+                    {loading ? 'Signing In...' : 'Sign In'}
                   </ShimmerButton>
                 </form>
 
                 <p className="text-center text-xs mt-5" style={{ color: 'rgba(255,255,255,0.35)' }}>
                   No account?{' '}
-                  <button onClick={() => setTab('register')} className="font-bold" style={{ color: '#B153D7', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif', fontSize: 12 }}>
+                  <button onClick={() => { setTab('register'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: '#B153D7', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif', fontSize: 12 }}>
                     Register here
                   </button>
                 </p>
@@ -250,21 +449,64 @@ export default function Landing() {
                 <h2 className="text-white text-xl font-black mb-1">Create account</h2>
                 <p className="text-xs mb-6" style={{ color: 'rgba(255,255,255,0.4)' }}>Register to access the system</p>
 
-                <form className="flex flex-col gap-4" onSubmit={e => e.preventDefault()}>
+                {/* Error Message */}
+                {error && (
+                  <div className="p-3 rounded-lg text-sm font-medium mb-4" style={{ backgroundColor: '#2d1a1a', color: '#ff6b6b', border: '1px solid #ff6b6b' }}>
+                    {error}
+                  </div>
+                )}
+
+                {/* Success Message */}
+                {success && (
+                  <div className="p-3 rounded-lg text-sm font-medium mb-4" style={{ backgroundColor: '#1a2d1a', color: '#51cf66', border: '1px solid #51cf66' }}>
+                    {success}
+                  </div>
+                )}
+
+                <form className="flex flex-col gap-4" onSubmit={handleRegisterSubmit}>
 
                   {/* First / Middle / Last Name */}
                   <div className="flex gap-2">
                     <div className="flex flex-col gap-1.5 flex-1">
                       <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>First Name</label>
-                      <input type="text" placeholder="Juan" className="inp w-full rounded-xl px-3 py-3 text-sm text-white" style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} />
+                      <input 
+                        type="text" 
+                        name="firstName"
+                        placeholder="Juan" 
+                        value={registerData.firstName}
+                        onChange={handleRegisterChange}
+                        disabled={loading}
+                        className="inp w-full rounded-xl px-3 py-3 text-sm text-white" 
+                        style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
+                        required
+                      />
                     </div>
                     <div className="flex flex-col gap-1.5 flex-1">
                       <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Middle Name</label>
-                      <input type="text" placeholder="Lim" className="inp w-full rounded-xl px-3 py-3 text-sm text-white" style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} />
+                      <input 
+                        type="text" 
+                        name="middleName"
+                        placeholder="Lim" 
+                        value={registerData.middleName}
+                        onChange={handleRegisterChange}
+                        disabled={loading}
+                        className="inp w-full rounded-xl px-3 py-3 text-sm text-white" 
+                        style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
+                      />
                     </div>
                     <div className="flex flex-col gap-1.5 flex-1">
                       <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Last Name</label>
-                      <input type="text" placeholder="Dela Cruz" className="inp w-full rounded-xl px-3 py-3 text-sm text-white" style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} />
+                      <input 
+                        type="text" 
+                        name="lastName"
+                        placeholder="Dela Cruz" 
+                        value={registerData.lastName}
+                        onChange={handleRegisterChange}
+                        disabled={loading}
+                        className="inp w-full rounded-xl px-3 py-3 text-sm text-white" 
+                        style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
+                        required
+                      />
                     </div>
                   </div>
 
@@ -272,7 +514,13 @@ export default function Landing() {
                   <div className="flex gap-2">
                     <div className="flex flex-col gap-1.5 flex-1">
                       <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Course</label>
-                      <select className="inp w-full rounded-xl px-3 py-3 text-sm text-white appearance-none" style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }}>
+                      <select 
+                        name="course"
+                        value={registerData.course}
+                        onChange={handleRegisterChange}
+                        disabled={loading}
+                        className="inp w-full rounded-xl px-3 py-3 text-sm text-white appearance-none" 
+                        style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }}>
                         <option value="">Select course</option>
                         <option value="BSIT">BSIT</option>
                         <option value="BSCS">BSCS</option>
@@ -280,7 +528,13 @@ export default function Landing() {
                     </div>
                     <div className="flex flex-col gap-1.5 flex-1">
                       <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Year Level</label>
-                      <select className="inp w-full rounded-xl px-3 py-3 text-sm text-white appearance-none" style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }}>
+                      <select 
+                        name="yearLevel"
+                        value={registerData.yearLevel}
+                        onChange={handleRegisterChange}
+                        disabled={loading}
+                        className="inp w-full rounded-xl px-3 py-3 text-sm text-white appearance-none" 
+                        style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }}>
                         <option value="">Select year</option>
                         <option value="first">1st Year</option>
                         <option value="second">2nd Year</option>
@@ -293,29 +547,69 @@ export default function Landing() {
                   {/* Student ID */}
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Student ID</label>
-                    <input type="text" placeholder="e.g. 23781234" className="inp w-full rounded-xl px-4 py-3 text-sm text-white" style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} />
+                    <input 
+                      type="text" 
+                      name="studentId"
+                      placeholder="e.g. 23781234" 
+                      value={registerData.studentId}
+                      onChange={handleRegisterChange}
+                      disabled={loading}
+                      className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
+                      style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
+                    />
                   </div>
 
                   {/* Email */}
                   <div className="flex flex-row gap-1.5">
-                    <div>
+                    <div className="flex-1">
                       <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Email Address</label>
-                      <input type="email" placeholder="you@uc.edu.ph" className="inp w-full rounded-xl px-4 py-3 text-sm text-white" style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} />
+                      <input 
+                        type="email" 
+                        name="email"
+                        placeholder="you@uc.edu.ph" 
+                        value={registerData.email}
+                        onChange={handleRegisterChange}
+                        disabled={loading}
+                        className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
+                        style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
+                        required
+                      />
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Address</label>
-                      <input type="address" placeholder="Your address" className="inp w-full rounded-xl px-4 py-3 text-sm text-white" style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} />
+                      <input 
+                        type="text" 
+                        name="address"
+                        placeholder="Your address" 
+                        value={registerData.address}
+                        onChange={handleRegisterChange}
+                        disabled={loading}
+                        className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
+                        style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
+                      />
                     </div>
-                 
                   </div>
-                  
 
                   {/* Password */}
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Password</label>
                     <div className="relative">
-                      <input type={showRegPass ? 'text' : 'password'} placeholder="Min. 8 characters" className="inp w-full rounded-xl px-4 py-3 text-sm text-white pr-16" style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} />
-                      <button type="button" onClick={() => setShowRegPass(s => !s)} className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold" style={{ color: '#4D2FB2', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif' }}>
+                      <input 
+                        type={showRegPass ? 'text' : 'password'} 
+                        name="password"
+                        placeholder="Min. 6 characters" 
+                        value={registerData.password}
+                        onChange={handleRegisterChange}
+                        disabled={loading}
+                        className="inp w-full rounded-xl px-4 py-3 text-sm text-white pr-16" 
+                        style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
+                        required
+                      />
+                      <button 
+                        type="button" 
+                        onClick={() => setShowRegPass(s => !s)} 
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold" 
+                        style={{ color: '#4D2FB2', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif' }}>
                         {showRegPass ? 'Hide' : 'Show'}
                       </button>
                     </div>
@@ -325,8 +619,22 @@ export default function Landing() {
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Confirm Password</label>
                     <div className="relative">
-                      <input type={showConfirm ? 'text' : 'password'} placeholder="Re-enter password" className="inp w-full rounded-xl px-4 py-3 text-sm text-white pr-16" style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} />
-                      <button type="button" onClick={() => setShowConfirm(s => !s)} className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold" style={{ color: '#4D2FB2', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif' }}>
+                      <input 
+                        type={showConfirm ? 'text' : 'password'} 
+                        name="confirmPassword"
+                        placeholder="Re-enter password" 
+                        value={registerData.confirmPassword}
+                        onChange={handleRegisterChange}
+                        disabled={loading}
+                        className="inp w-full rounded-xl px-4 py-3 text-sm text-white pr-16" 
+                        style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
+                        required
+                      />
+                      <button 
+                        type="button" 
+                        onClick={() => setShowConfirm(s => !s)} 
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold" 
+                        style={{ color: '#4D2FB2', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif' }}>
                         {showConfirm ? 'Hide' : 'Show'}
                       </button>
                     </div>
@@ -334,7 +642,16 @@ export default function Landing() {
 
                   {/* Terms */}
                   <div className="flex items-start gap-2">
-                    <input type="checkbox" id="terms" className="w-4 h-4 mt-0.5 cursor-pointer flex-shrink-0" style={{ accentColor: '#4D2FB2' }} />
+                    <input 
+                      type="checkbox" 
+                      id="terms" 
+                      name="agreeTerms"
+                      checked={registerData.agreeTerms}
+                      onChange={handleRegisterChange}
+                      disabled={loading}
+                      className="w-4 h-4 mt-0.5 cursor-pointer flex-shrink-0" 
+                      style={{ accentColor: '#4D2FB2' }} 
+                    />
                     <label htmlFor="terms" className="text-xs font-medium cursor-pointer leading-relaxed" style={{ color: 'rgba(255,255,255,0.4)' }}>
                       I agree to the{' '}
                       <a href="#" className="font-semibold" style={{ color: '#B153D7', textDecoration: 'none' }}>Terms of Service</a>
@@ -343,14 +660,20 @@ export default function Landing() {
                     </label>
                   </div>
 
-                  <ShimmerButton className="w-full py-3 rounded-xl text-sm font-bold mt-1" background="#0E21A0" shimmerColor="#4D2FB2" shimmerSize="0.1em">
-                    Create Account
+                  <ShimmerButton 
+                    className="w-full py-3 rounded-xl text-sm font-bold mt-1" 
+                    background={loading ? "#4D2FB2" : "#0E21A0"} 
+                    shimmerColor="#4D2FB2" 
+                    shimmerSize="0.1em"
+                    disabled={loading}
+                  >
+                    {loading ? 'Creating Account...' : 'Create Account'}
                   </ShimmerButton>
                 </form>
 
                 <p className="text-center text-xs mt-5" style={{ color: 'rgba(255,255,255,0.35)' }}>
                   Already have an account?{' '}
-                  <button onClick={() => setTab('login')} className="font-bold" style={{ color: '#B153D7', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif', fontSize: 12 }}>
+                  <button onClick={() => { setTab('login'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: '#B153D7', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif', fontSize: 12 }}>
                     Sign In
                   </button>
                 </p>
