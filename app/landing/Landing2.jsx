@@ -467,7 +467,7 @@ export default function Landing() {
                 <form className="flex flex-col gap-4" onSubmit={handleRegisterSubmit}>
 
                   {/* First / Middle / Last Name */}
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-4 sm:gap-2">
                     <div className="flex flex-col gap-1.5 flex-1">
                       <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>First Name</label>
                       <input 
@@ -512,7 +512,7 @@ export default function Landing() {
                   </div>
 
                   {/* Course + Year Level */}
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-4 sm:gap-2">
                     <div className="flex flex-col gap-1.5 flex-1">
                       <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Course</label>
                       <select 

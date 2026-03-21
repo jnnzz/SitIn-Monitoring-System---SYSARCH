@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { LogOut, User, Bell, BookOpen } from 'lucide-react'
 import Image from 'next/image'
@@ -37,7 +37,9 @@ export default function StudentDashboard() {
     address: ''
   })
   const [saving, setSaving] = useState(false)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
+  const fileInputRef = useRef(null)
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -101,6 +103,49 @@ export default function StudentDashboard() {
       setMessage({ type: 'error', text: '❌ Error updating profile' })
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleAvatarClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  }
+
+  const handleAvatarChange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadingAvatar(true);
+    const formData = new FormData();
+    formData.append('avatar', file);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:5000/api/auth/avatar', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const updatedUser = { ...user, avatar_url: data.avatar_url };
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        setMessage({ type: 'success', text: '✅ Profile picture updated!' });
+        setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+      } else {
+        setMessage({ type: 'error', text: '❌ Failed to upload picture' });
+      }
+    } catch (error) {
+      console.error('Error uploading avatar:', error);
+      setMessage({ type: 'error', text: '❌ Error uploading picture' });
+    } finally {
+      setUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }
 
@@ -202,10 +247,14 @@ export default function StudentDashboard() {
         </div>
 
         <div className="flex items-center gap-6">
-          <div className="hidden sm:flex items-center gap-3 bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] py-1.5 px-3 rounded-full">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 flex items-center justify-center text-sm font-bold shadow-sm">
-              {user?.full_name?.charAt(0).toUpperCase() || 'S'}
-            </div>
+          <div className="hidden sm:flex items-center gap-3 bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] py-1.5 px-3 rounded-full overflow-hidden">
+            {user?.avatar_url ? (
+              <img src={user.avatar_url} alt="Profile" className="w-8 h-8 rounded-full object-cover" />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 flex shrink-0 items-center justify-center text-sm font-bold shadow-sm">
+                {user?.full_name?.charAt(0).toUpperCase() || 'S'}
+              </div>
+            )}
             <div className="pr-2">
               <div className="text-sm font-semibold leading-tight">{user?.full_name || 'Student'}</div>
               <div className="text-[10px] text-gray-400">{user?.student_id || 'ID Unknown'}</div>
@@ -250,9 +299,13 @@ export default function StudentDashboard() {
                 <div className="absolute -top-24 -right-24 w-64 h-64 bg-purple-600 rounded-full mix-blend-multiply filter blur-[80px] opacity-30 animate-pulse"></div>
 
                 <div className="relative z-10 flex flex-col md:flex-row gap-6 md:items-center">
-                  <div className="w-24 h-24 md:w-32 md:h-32 rounded-2xl bg-gradient-to-br from-[#4D2FB2] to-[#B153D7] flex shrink-0 items-center justify-center text-4xl md:text-5xl font-black shadow-[0_8px_30px_rgba(77,47,178,0.4)]">
-                    {user?.full_name?.charAt(0).toUpperCase() || 'S'}
-                  </div>
+                  {user?.avatar_url ? (
+                    <img src={user.avatar_url} alt="Profile Banner" className="w-24 h-24 md:w-32 md:h-32 rounded-2xl object-cover shadow-[0_8px_30px_rgba(77,47,178,0.4)]" />
+                  ) : (
+                    <div className="w-24 h-24 md:w-32 md:h-32 rounded-2xl bg-gradient-to-br from-[#4D2FB2] to-[#B153D7] flex shrink-0 items-center justify-center text-4xl md:text-5xl font-black shadow-[0_8px_30px_rgba(77,47,178,0.4)]">
+                      {user?.full_name?.charAt(0).toUpperCase() || 'S'}
+                    </div>
+                  )}
                   <div className="flex-1">
                     <h1 className="text-2xl md:text-4xl font-bold mb-1 tracking-tight">Welcome back, {user?.full_name?.split(' ')[0] || 'Student'}!</h1>
                     <div className="text-sm font-medium text-purple-300 mb-4">{user?.email || <span className="text-gray-500 italic">No email on record</span>}</div>
@@ -378,6 +431,35 @@ export default function StudentDashboard() {
                   <div>
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2">Email</label>
                     <div className="text-sm font-medium text-gray-300">{user?.email || <span className="text-gray-600 italic">Not registered</span>}</div>
+                  </div>
+                </div>
+
+                {/* Profile Photo Edit */}
+                <div className="p-5 rounded-xl bg-black/20 border border-[rgba(255,255,255,0.03)] flex flex-col sm:flex-row items-center gap-6">
+                  {user?.avatar_url ? (
+                    <img src={user.avatar_url} alt="Current profile" className="w-20 h-20 rounded-2xl object-cover shadow-lg" />
+                  ) : (
+                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-2xl font-bold shadow-lg">
+                      {user?.full_name?.charAt(0).toUpperCase() || 'S'}
+                    </div>
+                  )}
+                  <div className="flex-1 text-center sm:text-left">
+                    <h3 className="font-bold mb-1">Profile Picture</h3>
+                    <p className="text-xs text-gray-400 mb-4 max-w-sm">Upload a new square shape image to display as your public profile photo. Max size: 5MB.</p>
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      onChange={handleAvatarChange} 
+                      accept="image/*" 
+                      className="hidden" 
+                    />
+                    <button 
+                      onClick={handleAvatarClick}
+                      disabled={uploadingAvatar}
+                      className="px-5 py-2 rounded-xl text-xs font-bold bg-[#4D2FB2]/20 hover:bg-[#4D2FB2]/30 border border-[#4D2FB2]/50 text-[#b096fa] transition disabled:opacity-50"
+                    >
+                      {uploadingAvatar ? 'Uploading...' : 'Upload New Photo'}
+                    </button>
                   </div>
                 </div>
 

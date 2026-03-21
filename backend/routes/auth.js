@@ -25,7 +25,7 @@ pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)`).catc
 
 router.post('/register', async (req, res) => {
   try {
-    const { student_id, full_name, email, password, role } = req.body;
+    const { student_id, full_name, email, password, role, course, year_level, address } = req.body;
     if (!student_id || !full_name || !password) return res.status(400).json({ error: 'All fields are required' });
     
     const userExists = await pool.query('SELECT * FROM users WHERE student_id = $1', [student_id]);
@@ -36,8 +36,8 @@ router.post('/register', async (req, res) => {
     const userRole = role === 'admin' ? 'admin' : 'student';
     
     const result = await pool.query(
-      'INSERT INTO users (student_id, full_name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, student_id, full_name, email, role',
-      [student_id, full_name, email || null, passwordHash, userRole]
+      'INSERT INTO users (student_id, full_name, email, password_hash, role, course, year_level, address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, student_id, full_name, email, role, course, year_level, address',
+      [student_id, full_name, email || null, passwordHash, userRole, course || null, year_level || null, address || null]
     );
     res.status(201).json({ message: 'User registered successfully', user: result.rows[0] });
   } catch (error) {
@@ -97,7 +97,7 @@ router.put('/profile', authenticateToken, async (req, res) => {
   try {
     const { course, year_level, address } = req.body;
     const result = await pool.query(
-      'UPDATE users SET course = $1, year_level = $2, address = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4 RETURNING id, student_id, full_name, role, course, year_level, address',
+      'UPDATE users SET course = $1, year_level = $2, address = $3 WHERE id = $4 RETURNING id, student_id, full_name, role, course, year_level, address',
       [course || null, year_level || null, address || null, req.user.userId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
