@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { LogOut, Users, Bell, Settings, Trash2, Plus, X, BarChart3, TrendingUp, Shield, RefreshCw } from 'lucide-react'
+import { LogOut, Users, Bell, Settings, Trash2, Plus, X, BarChart3, TrendingUp, Shield, RefreshCw, MonitorPlay, Search, Clock, CheckCircle2 } from 'lucide-react'
 import Image from 'next/image'
 import ccs from '../assets/ccslogo.png'
 
@@ -89,6 +89,16 @@ export default function AdminDashboard() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
 
+  // Sit-In Session Management
+  const [sitinSearch, setSitinSearch] = useState('')
+  const [sitinResults, setSitinResults] = useState([])
+  const [activeSessions, setActiveSessions] = useState([])
+  const [sitinRecords, setSitinRecords] = useState([])
+  const [sitinView, setSitinView] = useState('search') // 'search' | 'active' | 'records'
+  const [startingSession, setStartingSession] = useState(null)
+  const [sessionForm, setSessionForm] = useState({ lab_name: 'Lab 524', purpose: 'Java' })
+  const [endingSession, setEndingSession] = useState(null)
+
   const getToken = () => localStorage.getItem('token')
 
   const fetchUsers = useCallback(async () => {
@@ -114,6 +124,72 @@ export default function AdminDashboard() {
     } catch (e) { console.error(e) }
   }, [])
 
+  const SITIN = 'http://localhost:5000/api/sitin'
+
+  const fetchActiveSessions = useCallback(async () => {
+    try {
+      const res = await fetch(`${SITIN}/sessions/active`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      if (res.ok) setActiveSessions(await res.json())
+    } catch (e) { console.error(e) }
+  }, [])
+
+  const fetchRecords = useCallback(async () => {
+    try {
+      const res = await fetch(`${SITIN}/sessions/records`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      if (res.ok) setSitinRecords(await res.json())
+    } catch (e) { console.error(e) }
+  }, [])
+
+  const handleSitinSearch = async (q) => {
+    setSitinSearch(q)
+    if (!q || q.trim().length < 1) { setSitinResults([]); return }
+    try {
+      const res = await fetch(`${SITIN}/students/search?q=${encodeURIComponent(q)}`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      if (res.ok) setSitinResults(await res.json())
+    } catch (e) { console.error(e) }
+  }
+
+  const handleStartSession = async (student) => {
+    setStartingSession(student)
+  }
+
+  const handleConfirmStart = async () => {
+    if (!startingSession) return
+    try {
+      const res = await fetch(`${SITIN}/sessions/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ user_id: startingSession.id, ...sessionForm })
+      })
+      if (res.ok) {
+        setStartingSession(null)
+        setSitinSearch('')
+        setSitinResults([])
+        await fetchActiveSessions()
+        setSitinView('active')
+      } else {
+        const err = await res.json()
+        alert(err.error || 'Failed to start session')
+      }
+    } catch (e) { alert('Connection error') }
+  }
+
+  const handleEndSession = async (sessionId) => {
+    if (!confirm('End this sit-in session?')) return
+    setEndingSession(sessionId)
+    try {
+      const res = await fetch(`${SITIN}/sessions/end/${sessionId}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` }
+      })
+      if (res.ok) {
+        await fetchActiveSessions()
+        await fetchRecords()
+      }
+    } catch (e) { console.error(e) }
+    setEndingSession(null)
+  }
+
   useEffect(() => {
     const token = localStorage.getItem('token')
     const userData = localStorage.getItem('user')
@@ -126,7 +202,9 @@ export default function AdminDashboard() {
     fetchUsers()
     fetchStats()
     fetchAnnouncements()
-  }, [router, fetchUsers, fetchStats, fetchAnnouncements])
+    fetchActiveSessions()
+    fetchRecords()
+  }, [router, fetchUsers, fetchStats, fetchAnnouncements, fetchActiveSessions, fetchRecords])
 
   const handleDeleteUser = async (id) => {
     if (!confirm('Delete this user? This cannot be undone.')) return
@@ -299,8 +377,9 @@ export default function AdminDashboard() {
         {/* TABS */}
         <div className="flex gap-8 mb-8 border-b border-[rgba(255,255,255,0.05)]">
           {[
-            { key: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={16} /> },
+                      { key: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={16} /> },
             { key: 'users', label: 'Manage Users', icon: <Users size={16} /> },
+            { key: 'sitin', label: 'Sit-In Sessions', icon: <MonitorPlay size={16} /> },
             { key: 'announcements', label: 'Announcements', icon: <Bell size={16} /> },
             { key: 'settings', label: 'Settings', icon: <Settings size={16} /> },
           ].map(t => (
@@ -512,6 +591,191 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* ── SIT-IN TAB ── */}
+        {activeTab === 'sitin' && (
+          <div className="flex flex-col gap-6">
+            {/* Header + sub-nav */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-bold">Sit-In Session Management</h2>
+                <p className="text-sm text-gray-400">{activeSessions.length} active session{activeSessions.length !== 1 ? 's' : ''}</p>
+              </div>
+              <div className="flex gap-2 bg-black/20 p-1 rounded-xl border border-[rgba(255,255,255,0.05)]">
+                {[
+                  { key: 'search', label: 'Search Student', icon: <Search size={14} /> },
+                  { key: 'active', label: `Active (${activeSessions.length})`, icon: <Clock size={14} /> },
+                  { key: 'records', label: 'Records', icon: <CheckCircle2 size={14} /> },
+                ].map(v => (
+                  <button key={v.key} onClick={() => setSitinView(v.key)}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition ${sitinView === v.key ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-white'}`}>
+                    {v.icon} {v.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* ── SEARCH VIEW ── */}
+            {sitinView === 'search' && (
+              <div className="flex flex-col gap-4">
+                <div className="bento-card">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-3">Search Student by Name or ID</label>
+                  <div className="relative">
+                    <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
+                    <input
+                      type="text" placeholder="e.g. Juan Dela Cruz or 2023-00001"
+                      value={sitinSearch} onChange={e => handleSitinSearch(e.target.value)}
+                      className="w-full bg-black/30 border border-[rgba(255,255,255,0.05)] rounded-xl pl-11 pr-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-red-500/50 transition"
+                    />
+                  </div>
+                </div>
+
+                {/* Results */}
+                {sitinResults.length > 0 && (
+                  <div className="bento-card p-0 overflow-hidden">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                          {['Student', 'ID', 'Course', 'Year', 'Sessions Left', 'Action'].map(h => (
+                            <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sitinResults.map(s => (
+                          <tr key={s.id} className="user-row border-b border-[rgba(255,255,255,0.03)]">
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-sm font-bold">
+                                  {s.full_name?.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="font-semibold text-sm">{s.full_name}</div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-purple-400 font-mono">{s.student_id}</td>
+                            <td className="px-6 py-4 text-sm text-gray-400">{s.course || '—'}</td>
+                            <td className="px-6 py-4 text-sm text-gray-400">{s.year_level || '—'}</td>
+                            <td className="px-6 py-4">
+                              <span className={`text-sm font-bold ${(s.remaining_sessions || 0) > 5 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {s.remaining_sessions ?? 30}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <button onClick={() => handleStartSession(s)}
+                                disabled={(s.remaining_sessions || 0) <= 0}
+                                className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-red-500 to-orange-500 text-white hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition">
+                                Start Session
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {sitinSearch && sitinResults.length === 0 && (
+                  <div className="bento-card text-center py-10 text-gray-600">
+                    <Users size={40} className="mx-auto mb-3 opacity-20" />
+                    <p>No students found for "{sitinSearch}"</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── ACTIVE SESSIONS VIEW ── */}
+            {sitinView === 'active' && (
+              <div className="flex flex-col gap-4">
+                <div className="flex justify-end">
+                  <button onClick={fetchActiveSessions} className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.05)] transition text-gray-300">
+                    <RefreshCw size={13} /> Refresh
+                  </button>
+                </div>
+                <div className="bento-card p-0 overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                        {['Student', 'ID', 'Lab', 'Purpose', 'Started', 'Sessions Left', 'Action'].map(h => (
+                          <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeSessions.length === 0 ? (
+                        <tr><td colSpan={7} className="text-center text-gray-600 py-12 text-sm">No active sessions at the moment</td></tr>
+                      ) : activeSessions.map(s => (
+                        <tr key={s.id} className="user-row border-b border-[rgba(255,255,255,0.03)]">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-sm font-bold">
+                                {s.full_name?.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="font-semibold text-sm">{s.full_name}</div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-purple-400 font-mono">{s.student_id}</td>
+                          <td className="px-6 py-4 text-sm text-gray-300">{s.lab_name}</td>
+                          <td className="px-6 py-4 text-sm text-gray-400">{s.purpose}</td>
+                          <td className="px-6 py-4 text-xs text-gray-500">{new Date(s.started_at).toLocaleTimeString()}</td>
+                          <td className="px-6 py-4">
+                            <span className={`font-bold text-sm ${(s.remaining_sessions || 0) > 5 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {s.remaining_sessions ?? 0}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <button onClick={() => handleEndSession(s.id)} disabled={endingSession === s.id}
+                              className="px-4 py-2 rounded-lg text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 disabled:opacity-50 transition">
+                              {endingSession === s.id ? 'Ending...' : 'End Session'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ── RECORDS VIEW ── */}
+            {sitinView === 'records' && (
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-500">{sitinRecords.length} total records</p>
+                  <button onClick={fetchRecords} className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.05)] transition text-gray-300">
+                    <RefreshCw size={13} /> Refresh
+                  </button>
+                </div>
+                <div className="bento-card p-0 overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                        {['Student', 'ID', 'Lab', 'Purpose', 'Started', 'Ended', 'Duration'].map(h => (
+                          <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sitinRecords.length === 0 ? (
+                        <tr><td colSpan={7} className="text-center text-gray-600 py-12 text-sm">No sit-in records yet</td></tr>
+                      ) : sitinRecords.map(r => (
+                        <tr key={r.id} className="user-row border-b border-[rgba(255,255,255,0.03)]">
+                          <td className="px-6 py-4 font-semibold text-sm">{r.full_name}</td>
+                          <td className="px-6 py-4 text-sm text-purple-400 font-mono">{r.student_id}</td>
+                          <td className="px-6 py-4 text-sm text-gray-300">{r.lab_name}</td>
+                          <td className="px-6 py-4 text-sm text-gray-400">{r.purpose}</td>
+                          <td className="px-6 py-4 text-xs text-gray-500">{new Date(r.started_at).toLocaleString()}</td>
+                          <td className="px-6 py-4 text-xs text-gray-500">{new Date(r.ended_at).toLocaleString()}</td>
+                          <td className="px-6 py-4">
+                            <span className="text-xs font-bold text-emerald-400">{r.duration_minutes} min</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── ANNOUNCEMENTS TAB ── */}
         {activeTab === 'announcements' && (
           <div className="flex flex-col gap-6">
@@ -640,6 +904,62 @@ export default function AdminDashboard() {
         )}
 
       </div>
+
+      {/* ── START SESSION MODAL ── */}
+      {startingSession && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-[#0d0d1f] border border-[rgba(255,255,255,0.08)] rounded-2xl w-full max-w-md shadow-2xl p-7">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold">Start Sit-In Session</h3>
+              <button onClick={() => setStartingSession(null)} className="p-1.5 rounded-lg hover:bg-white/5 text-gray-500"><X size={18} /></button>
+            </div>
+
+            {/* Student info */}
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-black/30 border border-[rgba(255,255,255,0.04)] mb-5">
+              <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-lg font-bold">
+                {startingSession.full_name?.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <div className="font-bold">{startingSession.full_name}</div>
+                <div className="text-xs text-gray-400">{startingSession.student_id} · {startingSession.course || 'No Course'}</div>
+                <div className="text-xs text-emerald-400 mt-0.5 font-semibold">{startingSession.remaining_sessions ?? 30} sessions remaining</div>
+              </div>
+            </div>
+
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-2">Laboratory</label>
+                <select value={sessionForm.lab_name} onChange={e => setSessionForm(p => ({ ...p, lab_name: e.target.value }))}
+                  className="w-full bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-red-500/50 transition">
+                  {['Lab 524', 'Lab 530', 'Lab 544', 'Lab 542', 'Lab 526'].map(lab => (
+                    <option key={lab} value={lab} className="bg-[#0d0d1f]">{lab}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-2">Purpose</label>
+                <select value={sessionForm.purpose} onChange={e => setSessionForm(p => ({ ...p, purpose: e.target.value }))}
+                  className="w-full bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-red-500/50 transition">
+                  {['Java', 'C#', 'C', 'Javascript', 'Php', 'Html & CSS'].map(p => (
+                    <option key={p} value={p} className="bg-[#0d0d1f]">{p}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={handleConfirmStart}
+                className="flex-1 py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-red-500 to-orange-500 text-white hover:opacity-90 transition shadow-lg">
+                ✓ Confirm & Start Session
+              </button>
+              <button onClick={() => setStartingSession(null)}
+                className="px-5 py-3 rounded-xl text-sm font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-white transition">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
