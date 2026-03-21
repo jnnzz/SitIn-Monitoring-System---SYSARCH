@@ -27,7 +27,7 @@ export default function Landing() {
 
   // Login state
   const [loginData, setLoginData] = useState({
-    email: '',
+    student_id: '',
     password: ''
   })
 
@@ -36,12 +36,12 @@ export default function Landing() {
     firstName: '',
     middleName: '',
     lastName: '',
+    student_id: '',
     email: '',
     password: '',
     confirmPassword: '',
     course: '',
     yearLevel: '',
-    studentId: '',
     address: '',
     agreeTerms: false
   })
@@ -70,8 +70,8 @@ export default function Landing() {
     setError('')
     setSuccess('')
 
-    if (!loginData.email || !loginData.password) {
-      setError('Email and password required')
+    if (!loginData.student_id || !loginData.password) {
+      setError('Student ID and password required')
       return
     }
 
@@ -82,7 +82,7 @@ export default function Landing() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: loginData.email,
+          student_id: loginData.student_id,
           password: loginData.password
         })
       })
@@ -114,7 +114,7 @@ export default function Landing() {
     setSuccess('')
 
     // Validation
-    if (!registerData.firstName || !registerData.lastName || !registerData.email || !registerData.password) {
+    if (!registerData.firstName || !registerData.lastName || !registerData.student_id || !registerData.password) {
       setError('Please fill all required fields')
       return
     }
@@ -143,9 +143,10 @@ export default function Landing() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: registerData.email,
+          student_id: registerData.student_id,
           password: registerData.password,
           full_name: full_name,
+          email: registerData.email,
           course: registerData.course,
           year_level: registerData.yearLevel,
           address: registerData.address
@@ -377,12 +378,12 @@ export default function Landing() {
 
                 <form className="flex flex-col gap-4" onSubmit={handleLoginSubmit}>
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Email Address</label>
+                    <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Student ID</label>
                     <input 
-                      type="email" 
-                      name="email"
-                      placeholder="you@uc.edu.ph" 
-                      value={loginData.email}
+                      type="text" 
+                      name="student_id"
+                      placeholder="e.g. 23781234" 
+                      value={loginData.student_id}
                       onChange={handleLoginChange}
                       disabled={loading}
                       className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
@@ -546,12 +547,28 @@ export default function Landing() {
 
                   {/* Student ID */}
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Student ID</label>
+                    <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Student ID <span style={{ color: '#ff6b6b' }}>*</span></label>
                     <input 
                       type="text" 
-                      name="studentId"
+                      name="student_id"
                       placeholder="e.g. 23781234" 
-                      value={registerData.studentId}
+                      value={registerData.student_id}
+                      onChange={handleRegisterChange}
+                      disabled={loading}
+                      className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
+                      style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
+                      required
+                    />
+                  </div>
+
+                  {/* Email */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Email Address</label>
+                    <input 
+                      type="email" 
+                      name="email"
+                      placeholder="e.g. student@example.com" 
+                      value={registerData.email}
                       onChange={handleRegisterChange}
                       disabled={loading}
                       className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
@@ -559,35 +576,19 @@ export default function Landing() {
                     />
                   </div>
 
-                  {/* Email */}
-                  <div className="flex flex-row gap-1.5">
-                    <div className="flex-1">
-                      <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Email Address</label>
-                      <input 
-                        type="email" 
-                        name="email"
-                        placeholder="you@uc.edu.ph" 
-                        value={registerData.email}
-                        onChange={handleRegisterChange}
-                        disabled={loading}
-                        className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
-                        style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
-                        required
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Address</label>
-                      <input 
-                        type="text" 
-                        name="address"
-                        placeholder="Your address" 
-                        value={registerData.address}
-                        onChange={handleRegisterChange}
-                        disabled={loading}
-                        className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
-                        style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
-                      />
-                    </div>
+                  {/* Address */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Address</label>
+                    <input 
+                      type="text" 
+                      name="address"
+                      placeholder="Your address" 
+                      value={registerData.address}
+                      onChange={handleRegisterChange}
+                      disabled={loading}
+                      className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
+                      style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
+                    />
                   </div>
 
                   {/* Password */}

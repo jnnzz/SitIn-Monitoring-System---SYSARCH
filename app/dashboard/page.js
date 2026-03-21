@@ -1,3 +1,3 @@
-import Dashboard from '../landing/Dashboard'
+import StudentDashboard from '../landing/StudentDashboard'
 
-export default Dashboard
+export default StudentDashboard
