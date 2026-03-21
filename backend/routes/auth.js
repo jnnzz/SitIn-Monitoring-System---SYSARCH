@@ -184,4 +184,86 @@ router.put('/profile', authenticateToken, async (req, res) => {
   }
 });
 
+// ── ADMIN MIDDLEWARE ────────────────────────────────────────────────────────
+function requireAdmin(req, res, next) {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
+// ── ANNOUNCEMENTS (simple in-memory store) ──────────────────────────────────
+let announcements = [
+  { id: 1, title: 'Lab Maintenance Notice', content: 'All laboratories will be closed on March 25-26 for scheduled maintenance.', date: 'March 20, 2026', type: 'important' },
+  { id: 2, title: 'New Software Available', content: 'Visual Studio Code and GitHub Desktop have been installed on all lab computers.', date: 'March 18, 2026', type: 'info' },
+  { id: 3, title: 'Session Tracking System Live', content: 'The SitIn Monitoring System is now active. Please log in for accurate session tracking.', date: 'March 15, 2026', type: 'success' },
+];
+let nextAnnouncementId = 4;
+
+router.get('/admin/announcements', authenticateToken, requireAdmin, (req, res) => {
+  res.json(announcements);
+});
+
+// Public read: any authenticated user can read announcements
+router.get('/announcements', authenticateToken, (req, res) => {
+  res.json(announcements);
+});
+
+router.post('/admin/announcements', authenticateToken, requireAdmin, (req, res) => {
+  const { title, content, type } = req.body;
+  if (!title || !content) return res.status(400).json({ error: 'Title and content required' });
+  const now = new Date();
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const dateStr = `${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+  const newAnn = { id: nextAnnouncementId++, title, content, date: dateStr, type: type || 'info' };
+  announcements.unshift(newAnn);
+  res.status(201).json(newAnn);
+});
+
+router.delete('/admin/announcements/:id', authenticateToken, requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  announcements = announcements.filter(a => a.id !== id);
+  res.json({ message: 'Deleted' });
+});
+
+// ── ADMIN: GET ALL USERS ────────────────────────────────────────────────────
+router.get('/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, student_id, full_name, email, role, course, year_level, address, created_at FROM users ORDER BY created_at DESC'
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Admin users error:', err);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// ── ADMIN: DELETE USER ──────────────────────────────────────────────────────
+router.delete('/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM users WHERE id = $1 AND role != $2', [id, 'admin']);
+    res.json({ message: 'User deleted' });
+  } catch (err) {
+    console.error('Admin delete user error:', err);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+// ── ADMIN: STATS ────────────────────────────────────────────────────────────
+router.get('/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const totalUsers = await pool.query("SELECT COUNT(*) FROM users WHERE role != 'admin'");
+    const today = await pool.query("SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE");
+    res.json({
+      total_users: parseInt(totalUsers.rows[0].count),
+      new_today: parseInt(today.rows[0].count),
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
 module.exports = router;
+

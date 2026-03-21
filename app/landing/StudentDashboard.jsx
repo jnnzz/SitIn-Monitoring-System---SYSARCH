@@ -6,30 +6,6 @@ import { LogOut, User, Bell, BookOpen } from 'lucide-react'
 import Image from 'next/image'
 import ccs from '../assets/ccslogo.png'
 
-const announcements = [
-  {
-    id: 1,
-    title: "Lab Maintenance Notice",
-    date: "March 20, 2026",
-    content: "All laboratories will be closed on March 25-26 for scheduled maintenance.",
-    type: "important"
-  },
-  {
-    id: 2,
-    title: "New Software Available",
-    date: "March 18, 2026",
-    content: "Visual Studio Code and GitHub Desktop have been installed on all lab computers.",
-    type: "info"
-  },
-  {
-    id: 3,
-    title: "Session Tracking System Live",
-    date: "March 15, 2026",
-    content: "The SitIn Monitoring System is now active. Please log in for accurate session tracking.",
-    type: "success"
-  }
-]
-
 const rules = [
   {
     icon: "🔇",
@@ -53,6 +29,7 @@ export default function StudentDashboard() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [announcements, setAnnouncements] = useState([])
   const [editMode, setEditMode] = useState(false)
   const [editData, setEditData] = useState({
     course: '',
@@ -79,6 +56,14 @@ export default function StudentDashboard() {
       address: parsedUser?.address || ''
     })
     setLoading(false)
+
+    // Fetch live announcements from admin
+    fetch('http://localhost:5000/api/auth/announcements', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setAnnouncements(data))
+      .catch(() => {})
   }, [router])
 
   const handleEditChange = (e) => {
