@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation'
 import { LogOut, Users, Bell, Settings, Trash2, Plus, X, BarChart3, TrendingUp, Shield, RefreshCw, MonitorPlay, Search, Clock, CheckCircle2 } from 'lucide-react'
 import Image from 'next/image'
 import ccs from '../assets/ccslogo.png'
+import { ToastStack } from '@/components/ui/toast-stack'
+import { useToasts } from '@/lib/use-toasts'
 
-const API = 'http://localhost:5000/api/auth'
+const API = '/api/auth'
 
 // ── Tiny SVG bar chart (no deps) ────────────────────────────────────────────
 function BarChart({ data, color = '#818cf8' }) {
@@ -87,7 +89,7 @@ export default function AdminDashboard() {
   const [editMode, setEditMode] = useState(false)
   const [editData, setEditData] = useState({ course: '', year_level: '', address: '' })
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState({ type: '', text: '' })
+  const { toasts, pushToast, removeToast } = useToasts()
 
   // Sit-In Session Management
   const [sitinSearch, setSitinSearch] = useState('')
@@ -124,7 +126,7 @@ export default function AdminDashboard() {
     } catch (e) { console.error(e) }
   }, [])
 
-  const SITIN = 'http://localhost:5000/api/sitin'
+  const SITIN = '/api/sitin'
 
   const fetchActiveSessions = useCallback(async () => {
     try {
@@ -167,11 +169,24 @@ export default function AdminDashboard() {
         setSitinResults([])
         await fetchActiveSessions()
         setSitinView('active')
+        pushToast({
+          type: 'success',
+          title: 'Sit-in session started',
+          description: `${startingSession.full_name} is now active.`,
+        })
       } else {
         const err = await res.json()
-        alert(err.error || 'Failed to start session')
+        pushToast({
+          type: 'error',
+          title: err.error || 'Failed to start session',
+        })
       }
-    } catch (e) { alert('Connection error') }
+    } catch (e) {
+      pushToast({
+        type: 'error',
+        title: 'Connection error',
+      })
+    }
   }
 
   const handleEndSession = async (sessionId) => {
@@ -183,10 +198,28 @@ export default function AdminDashboard() {
         headers: { Authorization: `Bearer ${getToken()}` }
       })
       if (res.ok) {
+        const data = await res.json().catch(() => null)
         await fetchActiveSessions()
         await fetchRecords()
+        pushToast({
+          type: 'success',
+          title: 'Session ended successfully',
+          description: data?.duration_minutes ? `Duration: ${data.duration_minutes} minutes.` : '',
+        })
+      } else {
+        const data = await res.json().catch(() => null)
+        pushToast({
+          type: 'error',
+          title: data?.error || 'Failed to end session',
+        })
       }
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.error(e)
+      pushToast({
+        type: 'error',
+        title: 'Connection error',
+      })
+    }
     setEndingSession(null)
   }
 
@@ -210,12 +243,38 @@ export default function AdminDashboard() {
     if (!confirm('Delete this user? This cannot be undone.')) return
     try {
       const res = await fetch(`${API}/admin/users/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getToken()}` } })
-      if (res.ok) { setUsers(prev => prev.filter(u => u.id !== id)); fetchStats() }
-    } catch (e) { console.error(e) }
+      if (res.ok) {
+        setUsers(prev => prev.filter(u => u.id !== id))
+        fetchStats()
+        pushToast({
+          type: 'success',
+          title: 'User deleted',
+        })
+      } else {
+        const data = await res.json().catch(() => null)
+        pushToast({
+          type: 'error',
+          title: data?.error || 'Failed to delete user',
+        })
+      }
+    } catch (e) {
+      console.error(e)
+      pushToast({
+        type: 'error',
+        title: 'Connection error',
+      })
+    }
   }
 
   const handlePostAnnouncement = async () => {
-    if (!newAnn.title || !newAnn.content) return
+    if (!newAnn.title || !newAnn.content) {
+      pushToast({
+        type: 'warning',
+        title: 'Announcement title and content are required',
+      })
+      return
+    }
+
     setPostingAnn(true)
     try {
       const res = await fetch(`${API}/admin/announcements`, {
@@ -228,16 +287,50 @@ export default function AdminDashboard() {
         setAnnouncements(prev => [created, ...prev])
         setNewAnn({ title: '', content: '', type: 'info' })
         setShowNewAnn(false)
+        pushToast({
+          type: 'success',
+          title: 'Announcement posted',
+        })
+      } else {
+        const data = await res.json().catch(() => null)
+        pushToast({
+          type: 'error',
+          title: data?.error || 'Failed to post announcement',
+        })
       }
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.error(e)
+      pushToast({
+        type: 'error',
+        title: 'Connection error',
+      })
+    }
     setPostingAnn(false)
   }
 
   const handleDeleteAnn = async (id) => {
     try {
-      await fetch(`${API}/admin/announcements/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getToken()}` } })
-      setAnnouncements(prev => prev.filter(a => a.id !== id))
-    } catch (e) { console.error(e) }
+      const res = await fetch(`${API}/admin/announcements/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getToken()}` } })
+      if (res.ok) {
+        setAnnouncements(prev => prev.filter(a => a.id !== id))
+        pushToast({
+          type: 'success',
+          title: 'Announcement deleted',
+        })
+      } else {
+        const data = await res.json().catch(() => null)
+        pushToast({
+          type: 'error',
+          title: data?.error || 'Failed to delete announcement',
+        })
+      }
+    } catch (e) {
+      console.error(e)
+      pushToast({
+        type: 'error',
+        title: 'Connection error',
+      })
+    }
   }
 
   const handleSaveProfile = async () => {
@@ -249,14 +342,29 @@ export default function AdminDashboard() {
         body: JSON.stringify(editData)
       })
       if (res.ok) {
-        const updatedUser = { ...user, ...editData }
+        const data = await res.json().catch(() => null)
+        const updatedUser = { ...user, ...(data?.user || editData) }
         setUser(updatedUser)
         localStorage.setItem('user', JSON.stringify(updatedUser))
         setEditMode(false)
-        setMessage({ type: 'success', text: '✅ Profile updated!' })
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+        pushToast({
+          type: 'success',
+          title: 'Profile updated',
+        })
+      } else {
+        const data = await res.json().catch(() => null)
+        pushToast({
+          type: 'error',
+          title: data?.error || 'Failed to update profile',
+        })
       }
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.error(e)
+      pushToast({
+        type: 'error',
+        title: 'Connection error',
+      })
+    }
     setSaving(false)
   }
 
@@ -856,12 +964,6 @@ export default function AdminDashboard() {
                 <div className="p-3 bg-red-500/10 text-red-400 rounded-xl"><Settings size={22} /></div>
               </div>
 
-              {message.text && (
-                <div className={`p-4 mb-6 rounded-xl text-sm font-semibold border ${message.type === 'success' ? 'bg-emerald-900/20 text-emerald-400 border-emerald-500/30' : 'bg-red-900/20 text-red-400 border-red-500/30'}`}>
-                  {message.text}
-                </div>
-              )}
-
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-5 rounded-xl bg-black/20 border border-[rgba(255,255,255,0.03)]">
                   <div>
@@ -904,6 +1006,8 @@ export default function AdminDashboard() {
         )}
 
       </div>
+
+  <ToastStack toasts={toasts} onDismiss={removeToast} />
 
       {/* ── START SESSION MODAL ── */}
       {startingSession && (

@@ -26,7 +26,12 @@ app.use('/api/sitin', sitinRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'Backend is running', timestamp: new Date() });
+  res.json({ 
+    status: 'Backend is running', 
+    timestamp: new Date(),
+    jwtConfigured: !!process.env.JWT_SECRET,
+    jwtSecretLength: process.env.JWT_SECRET?.length || 0
+  });
 });
 
 // Error handling middleware

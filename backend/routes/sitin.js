@@ -26,6 +26,10 @@ async function migrate() {
   `).catch(() => {});
 
   await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active'
+  `).catch(() => {});
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS active_sessions (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

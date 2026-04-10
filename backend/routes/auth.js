@@ -10,11 +10,16 @@ function authenticateToken(req, res, next) {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
+    console.log('❌ No token provided');
     return res.status(401).json({ error: 'Access token required' });
   }
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid or expired token' });
+    if (err) {
+      console.log('❌ Token verification failed:', err.message);
+      console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);
+      return res.status(403).json({ error: 'Invalid or expired token', details: err.message });
+    }
     req.user = user;
     next();
   });
@@ -36,8 +41,8 @@ router.post('/register', async (req, res) => {
     const userRole = role === 'admin' ? 'admin' : 'student';
     
     const result = await pool.query(
-      'INSERT INTO users (student_id, full_name, email, password_hash, role, course, year_level, address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, student_id, full_name, email, role, course, year_level, address',
-      [student_id, full_name, email || null, passwordHash, userRole, course || null, year_level || null, address || null]
+      'INSERT INTO users (student_id, full_name, email, password_hash, role, course, year_level, address, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, student_id, full_name, email, role, course, year_level, address, status',
+      [student_id, full_name, email || null, passwordHash, userRole, course || null, year_level || null, address || null, 'active']
     );
     res.status(201).json({ message: 'User registered successfully', user: result.rows[0] });
   } catch (error) {
@@ -52,7 +57,7 @@ router.post('/login', async (req, res) => {
     if (!student_id || !password) return res.status(400).json({ error: 'Student ID and password required' });
     
     const result = await pool.query(
-      'SELECT id, student_id, full_name, email, password_hash, role, course, year_level, address, remaining_sessions FROM users WHERE student_id = $1',
+      'SELECT id, student_id, full_name, email, password_hash, role, course, year_level, address, remaining_sessions, status FROM users WHERE student_id = $1',
       [student_id]
     );
     if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid student ID or password' });
@@ -72,7 +77,7 @@ router.post('/login', async (req, res) => {
       user: {
         id: user.id, student_id: user.student_id, full_name: user.full_name, email: user.email,
         role: user.role, course: user.course, year_level: user.year_level, address: user.address,
-        remaining_sessions: user.remaining_sessions || 0
+        remaining_sessions: user.remaining_sessions || 0, status: user.status || 'active'
       },
       token
     });
@@ -85,7 +90,7 @@ router.post('/login', async (req, res) => {
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, student_id, full_name, email, role, course, year_level, address, remaining_sessions, created_at FROM users WHERE id = $1',
+      'SELECT id, student_id, full_name, email, role, course, year_level, address, remaining_sessions, status, created_at FROM users WHERE id = $1',
       [req.user.userId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -95,14 +100,38 @@ router.get('/profile', authenticateToken, async (req, res) => {
 
 router.put('/profile', authenticateToken, async (req, res) => {
   try {
-    const { course, year_level, address } = req.body;
+    const { course, year_level, address, status } = req.body;
     const result = await pool.query(
-      'UPDATE users SET course = $1, year_level = $2, address = $3 WHERE id = $4 RETURNING id, student_id, full_name, role, course, year_level, address',
-      [course || null, year_level || null, address || null, req.user.userId]
+      'UPDATE users SET course = $1, year_level = $2, address = $3, status = COALESCE($4, status), updated_at = CURRENT_TIMESTAMP WHERE id = $5 RETURNING id, student_id, full_name, role, course, year_level, address, status',
+      [course || null, year_level || null, address || null, status || null, req.user.userId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
     res.json({ message: 'Profile updated successfully', user: result.rows[0] });
   } catch (error) { res.status(500).json({ error: 'Failed to update profile' }); }
+});
+
+// ── STATUS UPDATE ───────────────────────────────────────────────────────────
+router.put('/status', authenticateToken, async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!status) return res.status(400).json({ error: 'Status is required' });
+    
+    // Validate status values (you can customize allowed values)
+    const allowedStatuses = ['active', 'away', 'busy', 'offline', 'do not disturb'];
+    if (!allowedStatuses.includes(status.toLowerCase())) {
+      return res.status(400).json({ error: 'Invalid status value', allowed: allowedStatuses });
+    }
+    
+    const result = await pool.query(
+      'UPDATE users SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, student_id, full_name, status',
+      [status, req.user.userId]
+    );
+    
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    res.json({ message: 'Status updated successfully', user: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update status' });
+  }
 });
 
 // ── LOGOUT / AUTO-END SESSION ───────────────────────────────────────────────
@@ -146,7 +175,7 @@ router.delete('/admin/announcements/:id', authenticateToken, requireAdmin, (req,
 
 router.get('/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const result = await pool.query("SELECT id, student_id, full_name, role, course, year_level, remaining_sessions, created_at FROM users WHERE role != 'admin' ORDER BY created_at DESC");
+    const result = await pool.query("SELECT id, student_id, full_name, role, course, year_level, remaining_sessions, status, created_at FROM users WHERE role != 'admin' ORDER BY created_at DESC");
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: 'Failed to fetch users' }); }
 });

@@ -9,11 +9,13 @@ import { BlurFade } from '@/components/ui/blur-fade'
 import { ShimmerButton } from '@/components/ui/shimmer-button'
 import { NumberTicker } from '@/components/ui/number-ticker'
 import { RetroGrid } from '@/components/ui/retro-grid'
+import { ToastStack } from '@/components/ui/toast-stack'
+import { useToasts } from '@/lib/use-toasts'
 import uc from './../assets/uclogo.png';
 import ccs from './../assets/ccslogo.png';
 import { MonitorCheck, BarChart3, BellRing, ShieldCheck } from 'lucide-react'
 
-const API_URL = 'http://localhost:5000/api'
+const API_URL = '/api'
 
 export default function Landing() {
   const router = useRouter()
@@ -22,8 +24,7 @@ export default function Landing() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [showRegPass, setShowRegPass] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const { toasts, pushToast, removeToast } = useToasts()
 
   // Login state
   const [loginData, setLoginData] = useState({
@@ -67,11 +68,12 @@ export default function Landing() {
   // Handle login submit
   const handleLoginSubmit = async (e) => {
     e.preventDefault()
-    setError('')
-    setSuccess('')
 
     if (!loginData.student_id || !loginData.password) {
-      setError('Student ID and password required')
+      pushToast({
+        type: 'error',
+        title: 'Student ID and password are required',
+      })
       return
     }
 
@@ -90,17 +92,28 @@ export default function Landing() {
       const data = await response.json()
 
       if (response.ok) {
-        setSuccess('✅ Login successful! Redirecting...')
+        pushToast({
+          type: 'success',
+          title: 'Login successful',
+          description: 'Redirecting to dashboard...',
+        })
         localStorage.setItem('token', data.token)
         localStorage.setItem('user', JSON.stringify(data.user))
         setTimeout(() => {
           router.push('/dashboard')
         }, 1500)
       } else {
-        setError(data.error || 'Login failed')
+        pushToast({
+          type: 'error',
+          title: data.error || 'Login failed',
+        })
       }
     } catch (err) {
-      setError('Connection error. Is backend running on port 5000?')
+      pushToast({
+        type: 'error',
+        title: 'Connection error',
+        description: 'Please try again.',
+      })
       console.error('Error:', err)
     } finally {
       setLoading(false)
@@ -110,27 +123,37 @@ export default function Landing() {
   // Handle register submit
   const handleRegisterSubmit = async (e) => {
     e.preventDefault()
-    setError('')
-    setSuccess('')
 
     // Validation
     if (!registerData.firstName || !registerData.lastName || !registerData.student_id || !registerData.password) {
-      setError('Please fill all required fields')
+      pushToast({
+        type: 'error',
+        title: 'Please fill all required fields',
+      })
       return
     }
 
     if (registerData.password.length < 6) {
-      setError('Password must be at least 6 characters')
+      pushToast({
+        type: 'error',
+        title: 'Password must be at least 6 characters',
+      })
       return
     }
 
     if (registerData.password !== registerData.confirmPassword) {
-      setError('Passwords do not match')
+      pushToast({
+        type: 'error',
+        title: 'Passwords do not match',
+      })
       return
     }
 
     if (!registerData.agreeTerms) {
-      setError('Please agree to Terms of Service and Privacy Policy')
+      pushToast({
+        type: 'warning',
+        title: 'Please agree to Terms and Privacy Policy',
+      })
       return
     }
 
@@ -156,17 +179,28 @@ export default function Landing() {
       const data = await response.json()
 
       if (response.ok) {
-        setSuccess('Registration successful! Redirecting...')
+        pushToast({
+          type: 'success',
+          title: 'Registration successful',
+          description: 'Redirecting to dashboard...',
+        })
         localStorage.setItem('token', data.token)
         localStorage.setItem('user', JSON.stringify(data.user))
         setTimeout(() => {
           router.push('/dashboard')
         }, 1500)
       } else {
-        setError(data.error || 'Registration failed')
+        pushToast({
+          type: 'error',
+          title: data.error || 'Registration failed',
+        })
       }
     } catch (err) {
-      setError('Connection error. Is backend running on port 5000?')
+      pushToast({
+        type: 'error',
+        title: 'Connection error',
+        description: 'Please try again.',
+      })
       console.error('Error:', err)
     } finally {
       setLoading(false)
@@ -196,9 +230,22 @@ export default function Landing() {
         .dot-blink { animation: blink 1.2s ease-in-out infinite; }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
 
-        .scroll-panel::-webkit-scrollbar { width: 4px; }
+        .scroll-panel::-webkit-scrollbar { width: 0; display: none; }
         .scroll-panel::-webkit-scrollbar-track { background: transparent; }
         .scroll-panel::-webkit-scrollbar-thumb { background: #1a1e40; border-radius: 10px; }
+        
+        .scroll-panel {
+          scrollbar-width: none; /* Firefox */
+          -ms-overflow-style: none; /* IE and Edge */
+        }
+
+        /* Mobile scroll improvements */
+        @media (max-width: 640px) {
+          .scroll-panel {
+            -webkit-overflow-scrolling: touch;
+            scroll-behavior: smooth;
+          }
+        }
 
         .divider-v {
           width: 1px;
@@ -214,7 +261,7 @@ export default function Landing() {
 
       {/* ══════════ LEFT SIDE ══════════ */}
       <div
-        className="relative z-10 flex flex-col justify-between w-1/2 min-h-screen px-14 py-10"
+        className="relative z-10 hidden lg:flex lg:flex-col justify-between w-full lg:w-1/2 min-h-screen px-6 sm:px-10 lg:px-14 py-6 sm:py-8 lg:py-10"
         // style={{ borderRight: '1px solid #1a1e40' }}
       >
 
@@ -328,17 +375,34 @@ export default function Landing() {
       </div>
 
       {/* ══════════ RIGHT SIDE ══════════ */}
-      <div className="relative z-10 flex items-center justify-center w-1/2  px-12 py-10">
+      <div className="relative z-10 flex items-center justify-center w-full lg:w-1/2 px-4 sm:px-8 lg:px-12 py-6 sm:py-8 lg:py-10">
         <BlurFade delay={0.3} inView className="w-full max-w-xl">
-          <div
-            className="relative max-w-2xl rounded-2xl p-8 overflow-hidden "
-            style={{ backgroundColor: '#0f1127', border: '1px solid #1a1e40', maxHeight: '92vh', overflowY: 'hidden' }}
-          >
+          {/* Mobile Logo Header (Visible only on mobile) */}
+          <div className="flex items-center justify-center gap-3 mb-6 lg:hidden">
+            <Image
+              src={ccs}
+              alt="College of Computer Studies"
+              width={40}
+              height={40}
+              className="object-contain"
+            />
+            <div className="flex flex-col">
+              <span className="text-white font-bold text-sm leading-tight">University of Cebu</span>
+              <span className="text-xs font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.4)' }}>College of Computer Studies</span>
+            </div>
+          </div>
+
+          {/* Outer container with BorderBeam (non-scrolling) */}
+          <div className="relative max-w-2xl rounded-2xl sm:rounded-3xl overflow-hidden"
+               style={{ backgroundColor: '#0f1127', border: '1px solid #1a1e40' }}>
             <BorderBeam size={280} duration={10} colorFrom="#0E21A0" colorTo="#F375C2" />
+            
+            {/* Inner scrollable content */}
+            <div className="overflow-y-auto scroll-panel p-5 sm:p-6 lg:p-8" style={{ maxHeight: '80vh' }}>
 
             {/* Tab switcher */}
             <div
-              className="flex rounded-xl p-1 mb-7"
+              className="flex rounded-lg sm:rounded-xl p-1 mb-5 sm:mb-7"
               style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }}
             >
               {[['login', 'Sign In'], ['register', 'Register']].map(([t, label]) => (
@@ -359,24 +423,10 @@ export default function Landing() {
             {/* ── LOGIN ── */}
             {tab === 'login' && (
               <div className=''>
-                <h2 className="text-white text-xl font-black mb-1">Welcome back</h2>
-                <p className="text-xs mb-6" style={{ color: 'rgba(255,255,255,0.4)' }}>Sign in to your dashboard</p>
+                <h2 className="text-white text-lg sm:text-xl font-black mb-1">Welcome back</h2>
+                <p className="text-xs sm:text-sm mb-4 sm:mb-6" style={{ color: 'rgba(255,255,255,0.4)' }}>Sign in to your dashboard</p>
 
-                {/* Error Message */}
-                {error && (
-                  <div className="p-3 rounded-lg text-sm font-medium mb-4" style={{ backgroundColor: '#2d1a1a', color: '#ff6b6b', border: '1px solid #ff6b6b' }}>
-                    {error}
-                  </div>
-                )}
-
-                {/* Success Message */}
-                {success && (
-                  <div className="p-3 rounded-lg text-sm font-medium mb-4" style={{ backgroundColor: '#1a2d1a', color: '#51cf66', border: '1px solid #51cf66' }}>
-                    {success}
-                  </div>
-                )}
-
-                <form className="flex flex-col gap-4" onSubmit={handleLoginSubmit}>
+                <form className="flex flex-col gap-3 sm:gap-4" onSubmit={handleLoginSubmit}>
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Student ID</label>
                     <input 
@@ -386,7 +436,7 @@ export default function Landing() {
                       value={loginData.student_id}
                       onChange={handleLoginChange}
                       disabled={loading}
-                      className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
+                      className="inp w-full rounded-lg sm:rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-sm text-white" 
                       style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
                       required
                     />
@@ -395,7 +445,7 @@ export default function Landing() {
                   <div className="flex flex-col gap-1.5">
                     <div className="flex justify-between items-center">
                       <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Password</label>
-                      <a href="#" className="text-xs font-semibold" style={{ color: '#B153D7', textDecoration: 'none' }}>Forgot Password?</a>
+                      <a href="#" className="text-xs font-semibold hidden sm:inline" style={{ color: '#B153D7', textDecoration: 'none' }}>Forgot Password?</a>
                     </div>
                     <div className="relative">
                       <input 
@@ -405,14 +455,14 @@ export default function Landing() {
                         value={loginData.password}
                         onChange={handleLoginChange}
                         disabled={loading}
-                        className="inp w-full rounded-xl px-4 py-3 text-sm text-white pr-16" 
+                        className="inp w-full rounded-lg sm:rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-sm text-white pr-14 sm:pr-16" 
                         style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
                         required
                       />
                       <button 
                         type="button" 
                         onClick={() => setShowPass(s => !s)} 
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold" 
+                        className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-xs font-semibold"
                         style={{ color: '#4D2FB2', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif' }}>
                         {showPass ? 'Hide' : 'Show'}
                       </button>
@@ -425,7 +475,7 @@ export default function Landing() {
                   </div>
 
                   <ShimmerButton 
-                    className="w-full py-3 rounded-xl text-sm font-bold mt-1" 
+                    className="w-full py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-sm font-bold mt-1" 
                     background={loading ? "#4D2FB2" : "#0E21A0"} 
                     shimmerColor="#4D2FB2" 
                     shimmerSize="0.1em"
@@ -435,9 +485,9 @@ export default function Landing() {
                   </ShimmerButton>
                 </form>
 
-                <p className="text-center text-xs mt-5" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                <p className="text-center text-xs sm:text-sm mt-4 sm:mt-5" style={{ color: 'rgba(255,255,255,0.35)' }}>
                   No account?{' '}
-                  <button onClick={() => { setTab('register'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: '#B153D7', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif', fontSize: 12 }}>
+                  <button onClick={() => setTab('register')} className="font-bold" style={{ color: '#B153D7', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif', fontSize: 12 }}>
                     Register here
                   </button>
                 </p>
@@ -447,27 +497,13 @@ export default function Landing() {
             {/* ── REGISTER ── */}
             {tab === 'register' && (
               <div className=''>
-                <h2 className="text-white text-xl font-black mb-1">Create account</h2>
-                <p className="text-xs mb-6" style={{ color: 'rgba(255,255,255,0.4)' }}>Register to access the system</p>
+                <h2 className="text-white text-lg sm:text-xl font-black mb-1">Create account</h2>
+                <p className="text-xs sm:text-sm mb-4 sm:mb-6" style={{ color: 'rgba(255,255,255,0.4)' }}>Register to access the system</p>
 
-                {/* Error Message */}
-                {error && (
-                  <div className="p-3 rounded-lg text-sm font-medium mb-4" style={{ backgroundColor: '#2d1a1a', color: '#ff6b6b', border: '1px solid #ff6b6b' }}>
-                    {error}
-                  </div>
-                )}
-
-                {/* Success Message */}
-                {success && (
-                  <div className="p-3 rounded-lg text-sm font-medium mb-4" style={{ backgroundColor: '#1a2d1a', color: '#51cf66', border: '1px solid #51cf66' }}>
-                    {success}
-                  </div>
-                )}
-
-                <form className="flex flex-col gap-4" onSubmit={handleRegisterSubmit}>
+                <form className="flex flex-col gap-3 sm:gap-4" onSubmit={handleRegisterSubmit}>
 
                   {/* First / Middle / Last Name */}
-                  <div className="flex flex-col sm:flex-row gap-4 sm:gap-2">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:gap-2">
                     <div className="flex flex-col gap-1.5 flex-1">
                       <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>First Name</label>
                       <input 
@@ -477,7 +513,7 @@ export default function Landing() {
                         value={registerData.firstName}
                         onChange={handleRegisterChange}
                         disabled={loading}
-                        className="inp w-full rounded-xl px-3 py-3 text-sm text-white" 
+                        className="inp w-full rounded-lg sm:rounded-xl px-3 py-2.5 sm:py-3 text-sm text-white" 
                         style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
                         required
                       />
@@ -491,7 +527,7 @@ export default function Landing() {
                         value={registerData.middleName}
                         onChange={handleRegisterChange}
                         disabled={loading}
-                        className="inp w-full rounded-xl px-3 py-3 text-sm text-white" 
+                        className="inp w-full rounded-lg sm:rounded-xl px-3 py-2.5 sm:py-3 text-sm text-white" 
                         style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
                       />
                     </div>
@@ -504,7 +540,7 @@ export default function Landing() {
                         value={registerData.lastName}
                         onChange={handleRegisterChange}
                         disabled={loading}
-                        className="inp w-full rounded-xl px-3 py-3 text-sm text-white" 
+                        className="inp w-full rounded-lg sm:rounded-xl px-3 py-2.5 sm:py-3 text-sm text-white" 
                         style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
                         required
                       />
@@ -512,7 +548,7 @@ export default function Landing() {
                   </div>
 
                   {/* Course + Year Level */}
-                  <div className="flex flex-col sm:flex-row gap-4 sm:gap-2">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:gap-2">
                     <div className="flex flex-col gap-1.5 flex-1">
                       <label className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Course</label>
                       <select 
@@ -520,7 +556,7 @@ export default function Landing() {
                         value={registerData.course}
                         onChange={handleRegisterChange}
                         disabled={loading}
-                        className="inp w-full rounded-xl px-3 py-3 text-sm text-white appearance-none" 
+                        className="inp w-full rounded-lg sm:rounded-xl px-3 py-2.5 sm:py-3 text-sm text-white appearance-none" 
                         style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }}>
                         <option value="">Select course</option>
                         <option value="BSIT">BSIT</option>
@@ -534,7 +570,7 @@ export default function Landing() {
                         value={registerData.yearLevel}
                         onChange={handleRegisterChange}
                         disabled={loading}
-                        className="inp w-full rounded-xl px-3 py-3 text-sm text-white appearance-none" 
+                        className="inp w-full rounded-lg sm:rounded-xl px-3 py-2.5 sm:py-3 text-sm text-white appearance-none" 
                         style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }}>
                         <option value="">Select year</option>
                         <option value="first">1st Year</option>
@@ -555,7 +591,7 @@ export default function Landing() {
                       value={registerData.student_id}
                       onChange={handleRegisterChange}
                       disabled={loading}
-                      className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
+                      className="inp w-full rounded-lg sm:rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-sm text-white" 
                       style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
                       required
                     />
@@ -571,7 +607,7 @@ export default function Landing() {
                       value={registerData.email}
                       onChange={handleRegisterChange}
                       disabled={loading}
-                      className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
+                      className="inp w-full rounded-lg sm:rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-sm text-white" 
                       style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
                     />
                   </div>
@@ -586,7 +622,7 @@ export default function Landing() {
                       value={registerData.address}
                       onChange={handleRegisterChange}
                       disabled={loading}
-                      className="inp w-full rounded-xl px-4 py-3 text-sm text-white" 
+                      className="inp w-full rounded-lg sm:rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-sm text-white" 
                       style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
                     />
                   </div>
@@ -602,14 +638,14 @@ export default function Landing() {
                         value={registerData.password}
                         onChange={handleRegisterChange}
                         disabled={loading}
-                        className="inp w-full rounded-xl px-4 py-3 text-sm text-white pr-16" 
+                        className="inp w-full rounded-lg sm:rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-sm text-white pr-14 sm:pr-16" 
                         style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
                         required
                       />
                       <button 
                         type="button" 
                         onClick={() => setShowRegPass(s => !s)} 
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold" 
+                        className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-xs font-semibold" 
                         style={{ color: '#4D2FB2', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif' }}>
                         {showRegPass ? 'Hide' : 'Show'}
                       </button>
@@ -627,14 +663,14 @@ export default function Landing() {
                         value={registerData.confirmPassword}
                         onChange={handleRegisterChange}
                         disabled={loading}
-                        className="inp w-full rounded-xl px-4 py-3 text-sm text-white pr-16" 
+                        className="inp w-full rounded-lg sm:rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-sm text-white pr-14 sm:pr-16" 
                         style={{ backgroundColor: '#080a18', border: '1px solid #1a1e40' }} 
                         required
                       />
                       <button 
                         type="button" 
                         onClick={() => setShowConfirm(s => !s)} 
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold" 
+                        className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-xs font-semibold" 
                         style={{ color: '#4D2FB2', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif' }}>
                         {showConfirm ? 'Hide' : 'Show'}
                       </button>
@@ -662,7 +698,7 @@ export default function Landing() {
                   </div>
 
                   <ShimmerButton 
-                    className="w-full py-3 rounded-xl text-sm font-bold mt-1" 
+                    className="w-full py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-sm font-bold mt-1" 
                     background={loading ? "#4D2FB2" : "#0E21A0"} 
                     shimmerColor="#4D2FB2" 
                     shimmerSize="0.1em"
@@ -672,18 +708,21 @@ export default function Landing() {
                   </ShimmerButton>
                 </form>
 
-                <p className="text-center text-xs mt-5" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                <p className="text-center text-xs sm:text-sm mt-4 sm:mt-5" style={{ color: 'rgba(255,255,255,0.35)' }}>
                   Already have an account?{' '}
-                  <button onClick={() => { setTab('login'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: '#B153D7', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif', fontSize: 12 }}>
+                  <button onClick={() => setTab('login')} className="font-bold" style={{ color: '#B153D7', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Poppins, sans-serif', fontSize: 12 }}>
                     Sign In
                   </button>
                 </p>
               </div>
             )}
 
-          </div>
+            </div> {/* Close inner scrollable div */}
+          </div> {/* Close outer BorderBeam container */}
         </BlurFade>
       </div>
+
+      <ToastStack toasts={toasts} onDismiss={removeToast} />
     </div>
   )
 }

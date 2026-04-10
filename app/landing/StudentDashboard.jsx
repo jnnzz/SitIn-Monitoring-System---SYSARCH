@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { LogOut, User, Bell, BookOpen } from 'lucide-react'
 import Image from 'next/image'
 import ccs from '../assets/ccslogo.png'
+import { ToastStack } from '@/components/ui/toast-stack'
+import { useToasts } from '@/lib/use-toasts'
 
 const rules = [
   {
@@ -38,7 +40,7 @@ export default function StudentDashboard() {
   })
   const [saving, setSaving] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
-  const [message, setMessage] = useState({ type: '', text: '' })
+  const { toasts, pushToast, removeToast } = useToasts()
   const fileInputRef = useRef(null)
 
   useEffect(() => {
@@ -60,11 +62,28 @@ export default function StudentDashboard() {
     setLoading(false)
 
     // Fetch live announcements from admin
-    fetch('http://localhost:5000/api/auth/announcements', {
+    fetch('/api/auth/announcements', {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(r => r.ok ? r.json() : [])
       .then(data => setAnnouncements(data))
+      .catch(() => {})
+
+    // Always hydrate from DB so profile changes persist across logout/login.
+    fetch('/api/auth/profile', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(profile => {
+        if (!profile) return
+        setUser(profile)
+        localStorage.setItem('user', JSON.stringify(profile))
+        setEditData({
+          course: profile?.course || '',
+          year_level: profile?.year_level || '',
+          address: profile?.address || ''
+        })
+      })
       .catch(() => {})
   }, [router])
 
@@ -75,11 +94,10 @@ export default function StudentDashboard() {
 
   const handleSaveProfile = async () => {
     setSaving(true)
-    setMessage({ type: '', text: '' })
 
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch('http://localhost:5000/api/auth/profile', {
+      const response = await fetch('/api/auth/profile', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -88,19 +106,29 @@ export default function StudentDashboard() {
         body: JSON.stringify(editData)
       })
 
+      const data = await response.json().catch(() => null)
+
       if (response.ok) {
-        const updatedUser = { ...user, ...editData }
+        const updatedUser = { ...user, ...(data?.user || editData) }
         setUser(updatedUser)
         localStorage.setItem('user', JSON.stringify(updatedUser))
         setEditMode(false)
-        setMessage({ type: 'success', text: '✅ Profile updated successfully!' })
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000)
+        pushToast({
+          type: 'success',
+          title: 'Profile updated successfully',
+        })
       } else {
-        setMessage({ type: 'error', text: '❌ Failed to update profile' })
+        pushToast({
+          type: 'error',
+          title: data?.error || 'Failed to update profile',
+        })
       }
     } catch (error) {
       console.error('Error updating profile:', error)
-      setMessage({ type: 'error', text: '❌ Error updating profile' })
+      pushToast({
+        type: 'error',
+        title: 'Error updating profile',
+      })
     } finally {
       setSaving(false)
     }
@@ -122,7 +150,7 @@ export default function StudentDashboard() {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:5000/api/auth/avatar', {
+      const response = await fetch('/api/auth/avatar', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -130,19 +158,28 @@ export default function StudentDashboard() {
         body: formData
       });
 
+      const data = await response.json().catch(() => null)
+
       if (response.ok) {
-        const data = await response.json();
         const updatedUser = { ...user, avatar_url: data.avatar_url };
         setUser(updatedUser);
         localStorage.setItem('user', JSON.stringify(updatedUser));
-        setMessage({ type: 'success', text: '✅ Profile picture updated!' });
-        setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+        pushToast({
+          type: 'success',
+          title: 'Profile picture updated',
+        });
       } else {
-        setMessage({ type: 'error', text: '❌ Failed to upload picture' });
+        pushToast({
+          type: 'error',
+          title: data?.error || 'Failed to upload picture',
+        });
       }
     } catch (error) {
       console.error('Error uploading avatar:', error);
-      setMessage({ type: 'error', text: '❌ Error uploading picture' });
+      pushToast({
+        type: 'error',
+        title: 'Error uploading picture',
+      });
     } finally {
       setUploadingAvatar(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -411,12 +448,6 @@ export default function StudentDashboard() {
                 </div>
               </div>
 
-              {message.text && (
-                <div className={`p-4 mb-6 rounded-xl text-sm font-semibold border ${message.type === 'success' ? 'bg-emerald-900/20 text-emerald-400 border-emerald-500/30' : 'bg-red-900/20 text-red-400 border-red-500/30'}`}>
-                  {message.text}
-                </div>
-              )}
-
               <div className="space-y-6">
                 {/* Read only block */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-5 rounded-xl bg-black/20 border border-[rgba(255,255,255,0.03)]">
@@ -531,6 +562,8 @@ export default function StudentDashboard() {
           </div>
         )}
       </div>
+
+      <ToastStack toasts={toasts} onDismiss={removeToast} />
     </div>
   )
 }

@@ -10,6 +10,7 @@ CREATE TABLE users (
   course VARCHAR(255),
   year_level VARCHAR(50),
   address TEXT,
+  status VARCHAR(50) DEFAULT 'active',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
