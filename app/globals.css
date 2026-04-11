@@ -255,3 +255,229 @@
     @apply bg-background text-foreground;
   }
 }
+
+:root {
+  --app-slate-50: #f8fafc;
+  --app-slate-100: #f1f5f9;
+  --app-slate-200: #e2e8f0;
+  --app-slate-300: #cbd5e1;
+  --app-slate-500: #64748b;
+  --app-slate-700: #334155;
+  --app-slate-800: #1e293b;
+  --app-slate-900: #0f172a;
+  --app-slate-950: #020617;
+  --app-blue-300: #93c5fd;
+  --app-blue-400: #60a5fa;
+  --app-blue-500: #3b82f6;
+  --app-blue-600: #2563eb;
+  --app-blue-700: #1d4ed8;
+}
+
+:root,
+html.light {
+  --app-bg: var(--app-slate-50);
+  --app-surface: #ffffff;
+  --app-surface-2: var(--app-slate-100);
+  --app-nav-bg: rgba(248, 250, 252, 0.9);
+  --app-fg: var(--app-slate-900);
+  --app-muted: var(--app-slate-500);
+  --app-border: var(--app-slate-200);
+  --app-accent: var(--app-blue-600);
+  --app-accent-strong: var(--app-blue-700);
+  --app-accent-soft: rgba(37, 99, 235, 0.14);
+  --app-on-accent: #eff6ff;
+  --app-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+}
+
+html.dark {
+  --app-bg: var(--app-slate-950);
+  --app-surface: var(--app-slate-900);
+  --app-surface-2: var(--app-slate-800);
+  --app-nav-bg: rgba(2, 6, 23, 0.86);
+  --app-fg: var(--app-slate-50);
+  --app-muted: var(--app-slate-300);
+  --app-border: rgba(148, 163, 184, 0.22);
+  --app-accent: var(--app-blue-400);
+  --app-accent-strong: var(--app-blue-300);
+  --app-accent-soft: rgba(96, 165, 250, 0.2);
+  --app-on-accent: #0f172a;
+  --app-shadow: 0 18px 38px rgba(2, 6, 23, 0.4);
+}
+
+.app-theme-shell {
+  background-color: var(--app-bg);
+  color: var(--app-fg);
+}
+
+.app-theme-shell .glass-nav {
+  background: var(--app-nav-bg) !important;
+  border-bottom-color: var(--app-border) !important;
+}
+
+.app-theme-shell .bento-card {
+  background: var(--app-surface) !important;
+  border-color: var(--app-border) !important;
+  box-shadow: var(--app-shadow) !important;
+}
+
+.app-theme-shell .bento-card:hover {
+  border-color: var(--app-accent) !important;
+  box-shadow: 0 14px 34px var(--app-accent-soft) !important;
+}
+
+.app-theme-shell .tab-btn.active {
+  color: var(--app-fg) !important;
+}
+
+.app-theme-shell .tab-btn.active::after {
+  background: var(--app-accent) !important;
+}
+
+.app-theme-shell .tab-btn:hover:not(.active) {
+  color: var(--app-muted) !important;
+}
+
+.app-theme-shell .user-row:hover {
+  background: var(--app-surface-2) !important;
+}
+
+.app-theme-shell input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.app-theme-shell select,
+.app-theme-shell textarea {
+  background-color: var(--app-surface-2) !important;
+  border-color: var(--app-border) !important;
+  color: var(--app-fg) !important;
+}
+
+.app-theme-shell input::placeholder,
+.app-theme-shell textarea::placeholder {
+  color: var(--app-muted) !important;
+  opacity: 0.95;
+}
+
+.app-theme-shell option {
+  background-color: var(--app-surface) !important;
+  color: var(--app-fg) !important;
+}
+
+.app-theme-shell [class*="bg-gradient-to"] {
+  background-image: none !important;
+}
+
+.app-theme-shell button[class*="bg-gradient-to"] {
+  background-color: var(--app-accent) !important;
+  color: var(--app-on-accent) !important;
+}
+
+.app-theme-shell [class*="bg-black/"],
+.app-theme-shell [class*="bg-white/"] {
+  background-color: var(--app-surface-2) !important;
+}
+
+.app-theme-shell [class*="border-[rgba"],
+.app-theme-shell [class*="border-white/"],
+.app-theme-shell [class*="border-black/"] {
+  border-color: var(--app-border) !important;
+}
+
+.app-theme-shell [class*="text-gray-"],
+.app-theme-shell [class*="text-zinc-"],
+.app-theme-shell [class*="text-neutral-"] {
+  color: var(--app-muted) !important;
+}
+
+.app-theme-shell [class*="text-white"] {
+  color: var(--app-fg) !important;
+}
+
+.app-theme-shell [class*="text-purple-"],
+.app-theme-shell [class*="text-indigo-"],
+.app-theme-shell [class*="text-red-"],
+.app-theme-shell [class*="text-orange-"],
+.app-theme-shell [class*="text-pink-"],
+.app-theme-shell [class*="text-emerald-"],
+.app-theme-shell [class*="text-blue-"],
+.app-theme-shell [class*="text-amber-"] {
+  color: var(--app-accent) !important;
+}
+
+.app-theme-shell [class*="bg-purple-"],
+.app-theme-shell [class*="bg-indigo-"],
+.app-theme-shell [class*="bg-red-"],
+.app-theme-shell [class*="bg-orange-"],
+.app-theme-shell [class*="bg-pink-"],
+.app-theme-shell [class*="bg-emerald-"],
+.app-theme-shell [class*="bg-blue-"],
+.app-theme-shell [class*="bg-amber-"] {
+  background-color: var(--app-accent-soft) !important;
+}
+
+.app-theme-shell [class*="border-purple-"],
+.app-theme-shell [class*="border-indigo-"],
+.app-theme-shell [class*="border-red-"],
+.app-theme-shell [class*="border-orange-"],
+.app-theme-shell [class*="border-pink-"],
+.app-theme-shell [class*="border-emerald-"],
+.app-theme-shell [class*="border-blue-"],
+.app-theme-shell [class*="border-amber-"] {
+  border-color: var(--app-accent) !important;
+}
+
+.app-theme-shell .bg-clip-text.text-transparent {
+  background-image: none !important;
+  color: var(--app-accent) !important;
+  -webkit-text-fill-color: var(--app-accent) !important;
+}
+
+.app-theme-shell .theme-solid-button {
+  background-color: var(--app-accent) !important;
+  border-color: var(--app-accent) !important;
+  color: var(--app-on-accent) !important;
+}
+
+.app-theme-shell .theme-solid-button:hover {
+  background-color: var(--app-accent-strong) !important;
+}
+
+.app-auth-shell .inp {
+  background-color: var(--app-surface-2) !important;
+  border-color: var(--app-border) !important;
+  color: var(--app-fg) !important;
+}
+
+.app-auth-shell .inp:focus {
+  border-color: var(--app-accent) !important;
+}
+
+.app-auth-shell .inp::placeholder,
+.app-auth-shell .muted-copy {
+  color: var(--app-muted) !important;
+}
+
+.app-auth-shell [style*="#080a18"],
+.app-auth-shell [style*="#0f1127"] {
+  background-color: var(--app-surface) !important;
+}
+
+.app-auth-shell [style*="#1a1e40"] {
+  border-color: var(--app-border) !important;
+  background-color: var(--app-border) !important;
+}
+
+.app-auth-shell [style*="#4D2FB2"],
+.app-auth-shell [style*="#0E21A0"],
+.app-auth-shell [style*="#B153D7"],
+.app-auth-shell [style*="#F375C2"] {
+  color: var(--app-accent) !important;
+  border-color: var(--app-accent) !important;
+}
+
+.app-auth-shell .theme-auth-button {
+  background-color: var(--app-accent) !important;
+  border: 1px solid var(--app-accent) !important;
+  color: var(--app-on-accent) !important;
+}
+
+.app-auth-shell .theme-auth-button:hover {
+  background-color: var(--app-accent-strong) !important;
+}

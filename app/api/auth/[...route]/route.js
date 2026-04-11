@@ -17,31 +17,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-let announcements = [
-  {
-    id: 1,
-    title: 'Lab Maintenance Notice',
-    content: 'All laboratories will be closed on March 25-26 for scheduled maintenance.',
-    date: 'March 20, 2026',
-    type: 'important',
-  },
-  {
-    id: 2,
-    title: 'New Software Available',
-    content: 'Visual Studio Code and GitHub Desktop have been installed on all lab computers.',
-    date: 'March 18, 2026',
-    type: 'info',
-  },
-  {
-    id: 3,
-    title: 'Session Tracking System Live',
-    content: 'The SitIn Monitoring System is now active. Please log in for accurate session tracking.',
-    date: 'March 15, 2026',
-    type: 'success',
-  },
-]
 
-let nextAnnouncementId = 4
 
 async function routeParts(paramsPromise) {
   const resolvedParams = await paramsPromise
@@ -119,7 +95,23 @@ export async function GET(request, { params }) {
   if (parts.length === 1 && parts[0] === 'announcements') {
     const auth = authenticateRequest(request, { includeDetails: true })
     if (auth.response) return auth.response
-    return NextResponse.json(announcements)
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS announcements (
+          id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL,
+          content TEXT NOT NULL, type VARCHAR(50) DEFAULT 'info',
+          created_by INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `).catch(() => {})
+      const result = await pool.query(
+        `SELECT id, title, content, type, TO_CHAR(created_at, 'FMMonth DD, YYYY at HH12:MI AM') AS date, created_at
+         FROM announcements ORDER BY created_at DESC`
+      )
+      return NextResponse.json(result.rows)
+    } catch (error) {
+      console.error(error)
+      return NextResponse.json({ error: 'Failed to fetch announcements' }, { status: 500 })
+    }
   }
 
   if (parts.length === 2 && parts[0] === 'admin' && parts[1] === 'announcements') {
@@ -129,7 +121,23 @@ export async function GET(request, { params }) {
     const adminError = requireAdmin(auth.user)
     if (adminError) return adminError
 
-    return NextResponse.json(announcements)
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS announcements (
+          id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL,
+          content TEXT NOT NULL, type VARCHAR(50) DEFAULT 'info',
+          created_by INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `).catch(() => {})
+      const result = await pool.query(
+        `SELECT id, title, content, type, TO_CHAR(created_at, 'FMMonth DD, YYYY at HH12:MI AM') AS date, created_at
+         FROM announcements ORDER BY created_at DESC`
+      )
+      return NextResponse.json(result.rows)
+    } catch (error) {
+      console.error(error)
+      return NextResponse.json({ error: 'Failed to fetch announcements' }, { status: 500 })
+    }
   }
 
   if (parts.length === 2 && parts[0] === 'admin' && parts[1] === 'users') {
@@ -141,7 +149,7 @@ export async function GET(request, { params }) {
 
     try {
       const result = await pool.query(
-        "SELECT id, student_id, full_name, role, course, year_level, remaining_sessions, status, created_at FROM users WHERE role != 'admin' ORDER BY created_at DESC"
+        "SELECT id, student_id, full_name, role, course, year_level, remaining_sessions, status, avatar_url, created_at FROM users WHERE role != 'admin' ORDER BY created_at DESC"
       )
       return NextResponse.json(result.rows)
     } catch (error) {
@@ -295,19 +303,48 @@ export async function POST(request, { params }) {
 
     const { title, content, type } = await readJson(request)
     if (!title || !content) {
-      return NextResponse.json({ error: 'Title required' }, { status: 400 })
+      return NextResponse.json({ error: 'Title and content required' }, { status: 400 })
     }
 
-    const newAnnouncement = {
-      id: nextAnnouncementId++,
-      title,
-      content,
-      date: todayLabel(),
-      type: type || 'info',
-    }
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS announcements (
+          id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL,
+          content TEXT NOT NULL, type VARCHAR(50) DEFAULT 'info',
+          created_by INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `).catch(() => {})
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL,
+          title VARCHAR(255) NOT NULL, message TEXT,
+          type VARCHAR(50) DEFAULT 'announcement', is_read BOOLEAN DEFAULT FALSE,
+          reference_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `).catch(() => {})
 
-    announcements.unshift(newAnnouncement)
-    return NextResponse.json(newAnnouncement, { status: 201 })
+      const annResult = await pool.query(
+        `INSERT INTO announcements (title, content, type, created_by)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, title, content, type,
+                   TO_CHAR(created_at, 'Month DD, YYYY') AS date, created_at`,
+        [title, content, type || 'info', auth.user.userId]
+      )
+      const newAnn = annResult.rows[0]
+
+      // Fan-out notifications to all students
+      const students = await pool.query(`SELECT id FROM users WHERE role != 'admin'`)
+      if (students.rows.length > 0) {
+        const vals = students.rows.map((_, i) => `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`).join(', ')
+        const prms = students.rows.flatMap(s => [s.id, title, content, newAnn.id])
+        await pool.query(`INSERT INTO notifications (user_id, title, message, reference_id) VALUES ${vals}`, prms).catch(() => {})
+      }
+
+      return NextResponse.json(newAnn, { status: 201 })
+    } catch (error) {
+      console.error(error)
+      return NextResponse.json({ error: 'Failed to create announcement' }, { status: 500 })
+    }
   }
 
   if (parts.length === 1 && parts[0] === 'avatar') {
@@ -450,9 +487,13 @@ export async function DELETE(request, { params }) {
     const adminError = requireAdmin(auth.user)
     if (adminError) return adminError
 
-    const announcementId = Number.parseInt(parts[2], 10)
-    announcements = announcements.filter((announcement) => announcement.id !== announcementId)
-    return NextResponse.json({ message: 'Deleted' })
+    try {
+      await pool.query('DELETE FROM announcements WHERE id = $1', [parts[2]])
+      return NextResponse.json({ message: 'Deleted' })
+    } catch (error) {
+      console.error(error)
+      return NextResponse.json({ error: 'Failed to delete announcement' }, { status: 500 })
+    }
   }
 
   if (parts.length === 3 && parts[0] === 'admin' && parts[1] === 'users') {

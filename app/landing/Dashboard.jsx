@@ -2,35 +2,30 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { LogOut, Users, Bell, Settings, Trash2, Plus, X, BarChart3, TrendingUp, Shield, RefreshCw, MonitorPlay, Search, Clock, CheckCircle2 } from 'lucide-react'
+import { LogOut, Users, Bell, Settings, Trash2, Plus, X, BarChart3, TrendingUp, Shield, RefreshCw, MonitorPlay, Search, Clock, CheckCircle2, Star, MessageSquare } from 'lucide-react'
 import Image from 'next/image'
 import ccs from '../assets/ccslogo.png'
 import { ToastStack } from '@/components/ui/toast-stack'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { useToasts } from '@/lib/use-toasts'
 
 const API = '/api/auth'
 
 // ── Tiny SVG bar chart (no deps) ────────────────────────────────────────────
-function BarChart({ data, color = '#818cf8' }) {
+function BarChart({ data, color = '#3b82f6' }) {
   const max = Math.max(...data.map(d => d.value), 1)
   const chartWidth = Math.max(300, data.length * 50 + 20) // Ensure a min width so bars don't stretch
   return (
     <svg viewBox={`0 0 ${chartWidth} 100`} className="w-full h-full" preserveAspectRatio="xMinYMax meet">
-      <defs>
-        <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.9" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.2" />
-        </linearGradient>
-      </defs>
       {data.map((d, i) => {
         const barH = (d.value / max) * 75
         const x = i * 50 + 10
         const y = 85 - barH
         return (
           <g key={i}>
-            <rect x={x} y={y} width={28} height={barH} rx={4} fill="url(#barGrad)" />
-            <text x={x + 14} y={98} textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.6)">{d.label}</text>
-            <text x={x + 14} y={y - 5} textAnchor="middle" fontSize="10" fontWeight="bold" fill="rgba(255,255,255,0.8)">{d.value}</text>
+            <rect x={x} y={y} width={28} height={barH} rx={4} fill={color} fillOpacity="0.85" />
+            <text x={x + 14} y={98} textAnchor="middle" fontSize="10" fill="var(--app-muted)">{d.label}</text>
+            <text x={x + 14} y={y - 5} textAnchor="middle" fontSize="10" fontWeight="bold" fill="var(--app-fg)">{d.value}</text>
           </g>
         )
       })}
@@ -96,10 +91,12 @@ export default function AdminDashboard() {
   const [sitinResults, setSitinResults] = useState([])
   const [activeSessions, setActiveSessions] = useState([])
   const [sitinRecords, setSitinRecords] = useState([])
-  const [sitinView, setSitinView] = useState('search') // 'search' | 'active' | 'records'
+  const [sitinView, setSitinView] = useState('records') // 'search' | 'active' | 'records'
   const [startingSession, setStartingSession] = useState(null)
   const [sessionForm, setSessionForm] = useState({ lab_name: 'Lab 524', purpose: 'Java' })
-  const [endingSession, setEndingSession] = useState(null)
+  const [endingSessionId, setEndingSessionId] = useState(null)
+  const [endSessionPrompt, setEndSessionPrompt] = useState(null)
+  const [endSessionFeedback, setEndSessionFeedback] = useState('')
 
   const getToken = () => localStorage.getItem('token')
 
@@ -189,13 +186,15 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleEndSession = async (sessionId) => {
-    if (!confirm('End this sit-in session?')) return
-    setEndingSession(sessionId)
+  const handleConfirmEndSession = async () => {
+    if (!endSessionPrompt) return
+    const sessionId = endSessionPrompt.id
+    setEndingSessionId(sessionId)
     try {
       const res = await fetch(`${SITIN}/sessions/end/${sessionId}`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${getToken()}` }
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ feedback: endSessionFeedback })
       })
       if (res.ok) {
         const data = await res.json().catch(() => null)
@@ -206,6 +205,8 @@ export default function AdminDashboard() {
           title: 'Session ended successfully',
           description: data?.duration_minutes ? `Duration: ${data.duration_minutes} minutes.` : '',
         })
+        setEndSessionPrompt(null)
+        setEndSessionFeedback('')
       } else {
         const data = await res.json().catch(() => null)
         pushToast({
@@ -220,7 +221,7 @@ export default function AdminDashboard() {
         title: 'Connection error',
       })
     }
-    setEndingSession(null)
+    setEndingSessionId(null)
   }
 
   useEffect(() => {
@@ -395,49 +396,49 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="w-full min-h-screen flex items-center justify-center bg-[#05050D]">
+      <div className="app-theme-shell w-full min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-pulse w-16 h-16 rounded-full bg-[#FF6B6B] mx-auto mb-6 shadow-[0_0_40px_rgba(255,107,107,0.6)]"></div>
-          <div className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-red-400 to-orange-500 mb-2">Loading Admin Console...</div>
+          <div className="animate-pulse w-16 h-16 rounded-full mx-auto mb-6" style={{ backgroundColor: 'var(--app-accent)', boxShadow: '0 0 30px var(--app-accent-soft)' }}></div>
+          <div className="text-2xl font-bold mb-2" style={{ color: 'var(--app-accent)' }}>Loading Admin Console...</div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="w-full min-h-screen text-white bg-[#05050D]" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="app-theme-shell w-full min-h-screen text-white" style={{ fontFamily: "'Inter', sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-        body, html { background-color: #05050D; margin: 0; padding: 0; overflow-x: hidden; }
+        body, html { background-color: var(--app-bg); margin: 0; padding: 0; overflow-x: hidden; }
 
         .bento-card {
-          background: rgba(18,18,38,0.5);
+          background: var(--app-surface);
           backdrop-filter: blur(12px);
-          border: 1px solid rgba(255,255,255,0.05);
+          border: 1px solid var(--app-border);
           border-radius: 20px;
           padding: 24px;
           transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
-          box-shadow: 0 4px 30px rgba(0,0,0,0.2);
+          box-shadow: var(--app-shadow);
         }
-        .bento-card:hover { border-color: rgba(255,107,107,0.25); }
+        .bento-card:hover { border-color: var(--app-accent); }
 
         .glass-nav {
-          background: rgba(5,5,13,0.85);
+          background: var(--app-nav-bg);
           backdrop-filter: blur(20px);
-          border-bottom: 1px solid rgba(255,255,255,0.05);
+          border-bottom: 1px solid var(--app-border);
         }
 
         .tab-btn { transition: all 0.2s; position: relative; }
-        .tab-btn.active { color: #fff; }
+        .tab-btn.active { color: var(--app-fg); }
         .tab-btn.active::after {
           content: '';
           position: absolute;
           bottom: 0; left: 0;
           width: 100%; height: 2px;
-          background: linear-gradient(90deg, #FF6B6B, #FF8E53);
+          background: var(--app-accent);
           border-radius: 2px 2px 0 0;
         }
-        .tab-btn:hover:not(.active) { color: rgba(255,255,255,0.8); }
+        .tab-btn:hover:not(.active) { color: var(--app-muted); }
 
         .user-row { transition: background 0.15s; }
         .user-row:hover { background: rgba(255,255,255,0.03); }
@@ -460,6 +461,7 @@ export default function AdminDashboard() {
         </div>
 
         <div className="flex items-center gap-5">
+          <ThemeToggle label={false} className="inline-flex" />
           <div className="hidden sm:flex items-center gap-3 bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] py-1.5 px-3 rounded-full">
             <div className="w-8 h-8 rounded-full bg-gradient-to-r from-red-500 to-orange-500 flex items-center justify-center text-sm font-bold">
               {user?.full_name?.charAt(0).toUpperCase() || 'A'}
@@ -597,9 +599,13 @@ export default function AdminDashboard() {
                 <div className="space-y-3 overflow-y-auto max-h-[280px]">
                   {users.slice(0, 5).map(u => (
                     <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl bg-black/20">
-                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-sm font-bold shrink-0">
-                        {u.full_name?.charAt(0).toUpperCase() || '?'}
-                      </div>
+                      {u.avatar_url ? (
+                        <img src={u.avatar_url} alt="Avatar" className="w-9 h-9 rounded-full object-cover shrink-0 border border-[rgba(255,255,255,0.1)]" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-sm font-bold shrink-0">
+                          {u.full_name?.charAt(0).toUpperCase() || '?'}
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-sm truncate">{u.full_name}</div>
                         <div className="text-xs text-gray-500 truncate">{u.student_id} · {u.course || 'No Course'}</div>
@@ -672,9 +678,13 @@ export default function AdminDashboard() {
                       <tr key={u.id} className="user-row border-b border-[rgba(255,255,255,0.03)]">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-sm font-bold shrink-0">
-                              {u.full_name?.charAt(0).toUpperCase() || '?'}
-                            </div>
+                            {u.avatar_url ? (
+                              <img src={u.avatar_url} alt="Avatar" className="w-9 h-9 rounded-full object-cover shrink-0 border border-[rgba(255,255,255,0.1)]" />
+                            ) : (
+                              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-sm font-bold shrink-0">
+                                {u.full_name?.charAt(0).toUpperCase() || '?'}
+                              </div>
+                            )}
                             <div className="font-semibold text-sm">{u.full_name}</div>
                           </div>
                         </td>
@@ -715,7 +725,11 @@ export default function AdminDashboard() {
                   { key: 'records', label: 'Records', icon: <CheckCircle2 size={14} /> },
                 ].map(v => (
                   <button key={v.key} onClick={() => setSitinView(v.key)}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition ${sitinView === v.key ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-white'}`}>
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold transition ${
+                      sitinView === v.key 
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 ring-1 ring-blue-500/50' 
+                        : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                    }`}>
                     {v.icon} {v.label}
                   </button>
                 ))}
@@ -753,9 +767,13 @@ export default function AdminDashboard() {
                           <tr key={s.id} className="user-row border-b border-[rgba(255,255,255,0.03)]">
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-sm font-bold">
-                                  {s.full_name?.charAt(0).toUpperCase()}
-                                </div>
+                                {s.avatar_url ? (
+                                  <img src={s.avatar_url} alt="Avatar" className="w-9 h-9 rounded-full object-cover shrink-0 border border-[rgba(255,255,255,0.1)]" />
+                                ) : (
+                                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-sm font-bold shrink-0">
+                                    {s.full_name?.charAt(0).toUpperCase() || '?'}
+                                  </div>
+                                )}
                                 <div className="font-semibold text-sm">{s.full_name}</div>
                               </div>
                             </td>
@@ -813,9 +831,13 @@ export default function AdminDashboard() {
                         <tr key={s.id} className="user-row border-b border-[rgba(255,255,255,0.03)]">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-sm font-bold">
-                                {s.full_name?.charAt(0).toUpperCase()}
-                              </div>
+                              {s.avatar_url ? (
+                                <img src={s.avatar_url} alt="Avatar" className="w-9 h-9 rounded-full object-cover shrink-0 border border-[rgba(255,255,255,0.1)]" />
+                              ) : (
+                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-sm font-bold shrink-0">
+                                  {s.full_name?.charAt(0).toUpperCase() || '?'}
+                                </div>
+                              )}
                               <div className="font-semibold text-sm">{s.full_name}</div>
                             </div>
                           </td>
@@ -829,9 +851,9 @@ export default function AdminDashboard() {
                             </span>
                           </td>
                           <td className="px-6 py-4">
-                            <button onClick={() => handleEndSession(s.id)} disabled={endingSession === s.id}
+                            <button onClick={() => setEndSessionPrompt(s)} disabled={endingSessionId === s.id}
                               className="px-4 py-2 rounded-lg text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 disabled:opacity-50 transition">
-                              {endingSession === s.id ? 'Ending...' : 'End Session'}
+                              {endingSessionId === s.id ? 'Ending...' : 'End Session'}
                             </button>
                           </td>
                         </tr>
@@ -842,45 +864,189 @@ export default function AdminDashboard() {
               </div>
             )}
 
+            {/* End Session Prompt Modal */}
+            {endSessionPrompt && (
+              <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-[#0f1117] border border-[rgba(255,255,255,0.1)] rounded-2xl w-full max-w-sm p-6 shadow-2xl relative">
+                  <h3 className="text-xl font-bold mb-1">End Sit-In Session</h3>
+                  <p className="text-sm text-gray-400 mb-5">
+                    Ending session for <span className="text-white font-semibold">{endSessionPrompt.full_name}</span>.
+                  </p>
+
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-2">
+                    Admin Feedback / Remarks (Optional)
+                  </label>
+                  <textarea
+                    className="w-full bg-black/30 border border-[rgba(255,255,255,0.05)] rounded-xl p-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-red-500/50 transition resize-none mb-6"
+                    rows={3}
+                    placeholder="e.g., Left workstation dirty, or proper behavior observed..."
+                    value={endSessionFeedback}
+                    onChange={e => setEndSessionFeedback(e.target.value)}
+                  />
+
+                  <div className="flex justify-end gap-3">
+                    <button onClick={() => { setEndSessionPrompt(null); setEndSessionFeedback(''); }} className="px-5 py-2.5 rounded-xl font-bold text-sm bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] text-gray-300 transition">Cancel</button>
+                    <button onClick={handleConfirmEndSession} disabled={endingSessionId === endSessionPrompt.id} className="px-5 py-2.5 rounded-xl font-bold text-sm bg-red-600 hover:bg-red-500 text-white transition disabled:opacity-50">
+                      {endingSessionId === endSessionPrompt.id ? 'Ending...' : 'Confirm'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ── RECORDS VIEW ── */}
-            {sitinView === 'records' && (
+            {sitinView === 'records' && (() => {
+              const totalSessions = sitinRecords.length;
+              const totalMins = sitinRecords.reduce((sum, r) => sum + (r.duration_minutes || 0), 0);
+              const totalHoursText = totalMins >= 60 ? `${Math.floor(totalMins / 60)}h ${totalMins % 60}m` : `${totalMins}m`;
+              const uniqueStudents = new Set(sitinRecords.map(r => r.student_id)).size;
+              const ratedSessions = sitinRecords.filter(r => r.rating > 0);
+              const avgRating = ratedSessions.length > 0 
+                ? (ratedSessions.reduce((sum, r) => sum + r.rating, 0) / ratedSessions.length).toFixed(1)
+                : '—';
+
+              return (
               <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-gray-500">{sitinRecords.length} total records</p>
+                
+                {/* Analytics Snapshot Row */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bento-card py-4 flex flex-col items-center justify-center bg-gradient-to-b from-emerald-500/10 to-transparent border-t-emerald-500/30">
+                    <div className="flex items-center gap-2 text-emerald-400 mb-1">
+                      <CheckCircle2 size={16} />
+                      <span className="text-[10px] font-bold uppercase tracking-wider">Total Sessions</span>
+                    </div>
+                    <div className="text-2xl font-black text-white">{totalSessions}</div>
+                  </div>
+                  
+                  <div className="bento-card py-4 flex flex-col items-center justify-center bg-gradient-to-b from-blue-500/10 to-transparent border-t-blue-500/30">
+                    <div className="flex items-center gap-2 text-blue-400 mb-1">
+                      <Clock size={16} />
+                      <span className="text-[10px] font-bold uppercase tracking-wider">Time Logged</span>
+                    </div>
+                    <div className="text-xl font-black text-white">{totalHoursText}</div>
+                  </div>
+
+                  <div className="bento-card py-4 flex flex-col items-center justify-center bg-gradient-to-b from-purple-500/10 to-transparent border-t-purple-500/30">
+                    <div className="flex items-center gap-2 text-purple-400 mb-1">
+                      <Users size={16} />
+                      <span className="text-[10px] font-bold uppercase tracking-wider">Unique Students</span>
+                    </div>
+                    <div className="text-2xl font-black text-white">{uniqueStudents}</div>
+                  </div>
+
+                  <div className="bento-card py-4 flex flex-col items-center justify-center bg-gradient-to-b from-amber-500/10 to-transparent border-t-amber-500/30">
+                    <div className="flex items-center gap-2 text-amber-400 mb-1">
+                      <Star size={16} />
+                      <span className="text-[10px] font-bold uppercase tracking-wider">Avg Rating</span>
+                    </div>
+                    <div className="text-2xl font-black text-white flex items-baseline gap-1">
+                      {avgRating} <span className="text-sm text-gray-500 font-medium">/ 5</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between mt-2">
+                  <h3 className="font-bold text-lg">Detailed Records List</h3>
                   <button onClick={fetchRecords} className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.05)] transition text-gray-300">
                     <RefreshCw size={13} /> Refresh
                   </button>
                 </div>
                 <div className="bento-card p-0 overflow-hidden">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-[rgba(255,255,255,0.05)]">
-                        {['Student', 'ID', 'Lab', 'Purpose', 'Started', 'Ended', 'Duration'].map(h => (
-                          <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sitinRecords.length === 0 ? (
-                        <tr><td colSpan={7} className="text-center text-gray-600 py-12 text-sm">No sit-in records yet</td></tr>
-                      ) : sitinRecords.map(r => (
-                        <tr key={r.id} className="user-row border-b border-[rgba(255,255,255,0.03)]">
-                          <td className="px-6 py-4 font-semibold text-sm">{r.full_name}</td>
-                          <td className="px-6 py-4 text-sm text-purple-400 font-mono">{r.student_id}</td>
-                          <td className="px-6 py-4 text-sm text-gray-300">{r.lab_name}</td>
-                          <td className="px-6 py-4 text-sm text-gray-400">{r.purpose}</td>
-                          <td className="px-6 py-4 text-xs text-gray-500">{new Date(r.started_at).toLocaleString()}</td>
-                          <td className="px-6 py-4 text-xs text-gray-500">{new Date(r.ended_at).toLocaleString()}</td>
-                          <td className="px-6 py-4">
-                            <span className="text-xs font-bold text-emerald-400">{r.duration_minutes} min</span>
-                          </td>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-[rgba(255,255,255,0.06)] bg-[rgba(0,0,0,0.2)]">
+                          {['Student', 'ID', 'Lab', 'Purpose', 'Started', 'Ended', 'Duration', 'Rating', 'Student Feedback', 'Admin Remarks'].map(h => (
+                            <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4 whitespace-nowrap">{h}</th>
+                          ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {sitinRecords.length === 0 ? (
+                          <tr><td colSpan={9} className="text-center text-gray-600 py-12 text-sm">No sit-in records yet</td></tr>
+                        ) : sitinRecords.map(r => (
+                          <tr key={r.id} className="user-row border-b border-[rgba(255,255,255,0.03)]">
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                {r.avatar_url ? (
+                                  <img src={r.avatar_url} alt="Avatar" className="w-8 h-8 rounded-full object-cover shrink-0 border border-[rgba(255,255,255,0.1)]" />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-xs font-bold shrink-0">
+                                    {r.full_name?.charAt(0).toUpperCase() || '?'}
+                                  </div>
+                                )}
+                                <span className="font-semibold text-sm whitespace-nowrap">{r.full_name}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-purple-400 font-mono whitespace-nowrap">{r.student_id}</td>
+                            <td className="px-6 py-4 text-sm text-gray-300 whitespace-nowrap">{r.lab_name}</td>
+                            <td className="px-6 py-4">
+                              <span className="text-xs px-2 py-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg font-semibold whitespace-nowrap">
+                                {r.purpose}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-gray-500 whitespace-nowrap">{r.started_at ? new Date(r.started_at).toLocaleString() : '—'}</td>
+                            <td className="px-6 py-4 text-xs text-gray-500 whitespace-nowrap">{r.ended_at ? new Date(r.ended_at).toLocaleString() : '—'}</td>
+                            <td className="px-6 py-4">
+                              <span className="text-xs font-bold text-emerald-400 whitespace-nowrap">
+                                {r.duration_minutes != null
+                                  ? r.duration_minutes >= 60
+                                    ? `${Math.floor(r.duration_minutes / 60)}h ${r.duration_minutes % 60}m`
+                                    : `${r.duration_minutes} min`
+                                  : '—'}
+                              </span>
+                            </td>
+                            {/* Rating */}
+                            <td className="px-6 py-4">
+                              {r.rating ? (
+                                <div className="flex items-center gap-0.5">
+                                  {[1,2,3,4,5].map(n => (
+                                    <Star key={n} size={13}
+                                      className={r.rating >= n ? 'text-amber-400 fill-amber-400' : 'text-gray-700'} />
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-gray-600 text-xs italic">—</span>
+                              )}
+                            </td>
+                            {/* Feedback */}
+                            {/* Student Feedback */}
+                            <td className="px-6 py-4">
+                              {r.feedback ? (
+                                <span
+                                  className="text-xs text-gray-300 max-w-[200px] truncate block"
+                                  title={r.feedback}
+                                >
+                                  <MessageSquare size={11} className="inline mr-1 text-purple-400" />
+                                  {r.feedback}
+                                </span>
+                              ) : (
+                                <span className="text-gray-600 text-xs italic">No feedback</span>
+                              )}
+                            </td>
+                            {/* Admin Remarks */}
+                            <td className="px-6 py-4">
+                              {r.admin_feedback ? (
+                                <span
+                                  className="text-xs border border-red-500/20 bg-red-500/10 text-red-300 px-2 py-1 rounded-md max-w-[200px] truncate block"
+                                  title={r.admin_feedback}
+                                >
+                                  {r.admin_feedback}
+                                </span>
+                              ) : (
+                                <span className="text-gray-600 text-xs italic">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
-            )}
+              )
+            })()}
           </div>
         )}
 

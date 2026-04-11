@@ -23,6 +23,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/sitin', sitinRoutes);
+app.use('/api/notifications', require('./routes/notification'));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

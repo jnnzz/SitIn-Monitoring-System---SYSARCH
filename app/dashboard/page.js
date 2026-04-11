@@ -24,8 +24,11 @@ export default function DashboardPage() {
 
   if (!role) {
     return (
-      <div className="w-full min-h-screen flex items-center justify-center bg-[#05050D]">
-        <div className="animate-pulse w-12 h-12 rounded-full bg-[#B153D7] shadow-[0_0_20px_rgba(177,83,215,0.5)]"></div>
+      <div className="app-theme-shell w-full min-h-screen flex items-center justify-center">
+        <div
+          className="animate-pulse w-12 h-12 rounded-full"
+          style={{ backgroundColor: 'var(--app-accent)', boxShadow: '0 0 20px var(--app-accent-soft)' }}
+        ></div>
       </div>
     )
   }

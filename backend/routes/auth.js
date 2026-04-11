@@ -147,30 +147,113 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-let announcements = [
-  { id: 1, title: 'Lab Maintenance Notice', content: 'All laboratories will be closed on March 25-26 for scheduled maintenance.', date: 'March 20, 2026', type: 'important' },
-  { id: 2, title: 'New Software Available', content: 'Visual Studio Code and GitHub Desktop have been installed on all lab computers.', date: 'March 18, 2026', type: 'info' },
-  { id: 3, title: 'Session Tracking System Live', content: 'The SitIn Monitoring System is now active. Please log in for accurate session tracking.', date: 'March 15, 2026', type: 'success' },
-];
-let nextAnnouncementId = 4;
+// ── DB migration: announcements table ───────────────────────────────────────
+pool.query(`
+  CREATE TABLE IF NOT EXISTS announcements (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    type VARCHAR(50) DEFAULT 'info',
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )
+`).catch(() => {});
 
-router.get('/admin/announcements', authenticateToken, requireAdmin, (req, res) => res.json(announcements));
-router.get('/announcements', authenticateToken, (req, res) => res.json(announcements));
+pool.query(`
+  CREATE TABLE IF NOT EXISTS notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    message TEXT,
+    type VARCHAR(50) DEFAULT 'announcement',
+    is_read BOOLEAN DEFAULT FALSE,
+    reference_id INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )
+`).catch(() => {});
 
-router.post('/admin/announcements', authenticateToken, requireAdmin, (req, res) => {
-  const { title, content, type } = req.body;
-  if (!title || !content) return res.status(400).json({ error: 'Title required' });
+// Helper: format date string
+function formatDate(date) {
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const now = new Date();
-  const dateStr = `${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
-  const newAnn = { id: nextAnnouncementId++, title, content, date: dateStr, type: type || 'info' };
-  announcements.unshift(newAnn);
-  res.status(201).json(newAnn);
+  return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+}
+
+// GET /api/auth/admin/announcements — admin sees all
+router.get('/admin/announcements', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, title, content, type,
+             TO_CHAR(created_at, 'Month DD, YYYY') AS date,
+             created_at
+      FROM announcements
+      ORDER BY created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch announcements' });
+  }
 });
 
-router.delete('/admin/announcements/:id', authenticateToken, requireAdmin, (req, res) => {
-  announcements = announcements.filter(a => a.id !== parseInt(req.params.id));
-  res.json({ message: 'Deleted' });
+// GET /api/auth/announcements — students see all
+router.get('/announcements', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, title, content, type,
+             TO_CHAR(created_at, 'Month DD, YYYY') AS date,
+             created_at
+      FROM announcements
+      ORDER BY created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch announcements' });
+  }
+});
+
+// POST /api/auth/admin/announcements — create + fan-out notifications
+router.post('/admin/announcements', authenticateToken, requireAdmin, async (req, res) => {
+  const { title, content, type } = req.body;
+  if (!title || !content) return res.status(400).json({ error: 'Title and content required' });
+
+  try {
+    // Insert announcement
+    const annResult = await pool.query(
+      `INSERT INTO announcements (title, content, type, created_by)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, title, content, type,
+                 TO_CHAR(created_at, 'Month DD, YYYY') AS date, created_at`,
+      [title, content, type || 'info', req.user.userId]
+    );
+    const newAnn = annResult.rows[0];
+
+    // Fan-out: create a notification for every student
+    const students = await pool.query(`SELECT id FROM users WHERE role != 'admin'`);
+    if (students.rows.length > 0) {
+      const values = students.rows.map((_, i) => `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`).join(', ');
+      const params = students.rows.flatMap(s => [s.id, title, content, newAnn.id]);
+      await pool.query(
+        `INSERT INTO notifications (user_id, title, message, reference_id) VALUES ${values}`,
+        params
+      ).catch(e => console.error('Notification fan-out error:', e));
+    }
+
+    res.status(201).json(newAnn);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to create announcement' });
+  }
+});
+
+// DELETE /api/auth/admin/announcements/:id
+router.delete('/admin/announcements/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM announcements WHERE id = $1', [req.params.id]);
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete announcement' });
+  }
 });
 
 router.get('/admin/users', authenticateToken, requireAdmin, async (req, res) => {

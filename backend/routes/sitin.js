@@ -49,9 +49,15 @@ async function migrate() {
       purpose VARCHAR(255),
       started_at TIMESTAMP,
       ended_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      duration_minutes INTEGER
+      duration_minutes INTEGER,
+      feedback TEXT,
+      rating INTEGER
     )
   `).catch(() => {});
+
+  // Add feedback columns to existing table if they don't exist
+  await pool.query(`ALTER TABLE sit_in_records ADD COLUMN IF NOT EXISTS feedback TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE sit_in_records ADD COLUMN IF NOT EXISTS rating INTEGER`).catch(() => {});
 }
 migrate();
 
@@ -188,4 +194,51 @@ router.get('/sessions/records', authenticateToken, requireAdmin, async (req, res
   }
 });
 
+// ── STUDENT: GET OWN SIT-IN HISTORY ──────────────────────────────────────────
+router.get('/my/history', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, lab_name, purpose, started_at, ended_at, duration_minutes, feedback, rating
+       FROM sit_in_records
+       WHERE user_id = $1
+       ORDER BY ended_at DESC`,
+      [req.user.userId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch history' });
+  }
+});
+
+// ── STUDENT: SUBMIT FEEDBACK FOR A PAST SESSION ───────────────────────────────
+router.put('/my/feedback/:recordId', authenticateToken, async (req, res) => {
+  const { feedback, rating } = req.body;
+  const recordId = parseInt(req.params.recordId);
+
+  if (rating !== undefined && (rating < 1 || rating > 5)) {
+    return res.status(400).json({ error: 'Rating must be 1-5' });
+  }
+
+  try {
+    // Only allow the student who owns this record to update
+    const result = await pool.query(
+      `UPDATE sit_in_records
+       SET feedback = COALESCE($1, feedback),
+           rating = COALESCE($2, rating)
+       WHERE id = $3 AND user_id = $4
+       RETURNING id, feedback, rating`,
+      [feedback || null, rating || null, recordId, req.user.userId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Record not found or not yours' });
+    }
+    res.json({ message: 'Feedback submitted', record: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to submit feedback' });
+  }
+});
+
 module.exports = router;
+

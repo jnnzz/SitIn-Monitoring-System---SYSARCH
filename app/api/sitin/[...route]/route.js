@@ -30,6 +30,26 @@ export async function GET(request, { params }) {
   const auth = authenticateRequest(request)
   if (auth.response) return auth.response
 
+  // ── Student: own sit-in history ───────────────────────────────────────────
+  if (parts.length === 2 && parts[0] === 'my' && parts[1] === 'history') {
+    try {
+      const result = await pool.query(
+        `SELECT id, student_id, full_name, lab_name, purpose,
+                started_at, ended_at, duration_minutes,
+                feedback, rating
+         FROM sit_in_records
+         WHERE user_id = $1
+         ORDER BY ended_at DESC`,
+        [auth.user.userId]
+      )
+      return NextResponse.json(result.rows)
+    } catch (error) {
+      console.error('[sitin/my/history] Query failed:', error.message)
+      return NextResponse.json({ error: 'Failed to fetch history' }, { status: 500 })
+    }
+  }
+
+  // ── Admin-only routes below ───────────────────────────────────────────────
   const adminError = requireAdmin(auth.user)
   if (adminError) return adminError
 
@@ -41,7 +61,7 @@ export async function GET(request, { params }) {
 
     try {
       const result = await pool.query(
-        `SELECT id, student_id, full_name, email, course, year_level, remaining_sessions
+        `SELECT id, student_id, full_name, email, course, year_level, remaining_sessions, avatar_url
          FROM users
          WHERE role != 'admin' AND (
            LOWER(full_name) LIKE LOWER($1) OR
@@ -63,7 +83,7 @@ export async function GET(request, { params }) {
       const result = await pool.query(`
         SELECT
           a.id, a.lab_name, a.purpose, a.started_at,
-          u.student_id, u.full_name, u.course, u.year_level, u.remaining_sessions
+          u.student_id, u.full_name, u.course, u.year_level, u.remaining_sessions, u.avatar_url
         FROM active_sessions a
         JOIN users u ON u.id = a.user_id
         ORDER BY a.started_at DESC
@@ -78,7 +98,12 @@ export async function GET(request, { params }) {
 
   if (parts.length === 2 && parts[0] === 'sessions' && parts[1] === 'records') {
     try {
-      const result = await pool.query('SELECT * FROM sit_in_records ORDER BY ended_at DESC LIMIT 200')
+      const result = await pool.query(`
+        SELECT r.*, u.avatar_url 
+        FROM sit_in_records r 
+        LEFT JOIN users u ON u.id = r.user_id 
+        ORDER BY r.ended_at DESC LIMIT 200
+      `)
       return NextResponse.json(result.rows)
     } catch (error) {
       console.error(error)
@@ -88,6 +113,7 @@ export async function GET(request, { params }) {
 
   return notFound()
 }
+
 
 export async function POST(request, { params }) {
   await ensureMigrations()
@@ -144,6 +170,14 @@ export async function POST(request, { params }) {
     }
 
     try {
+      let adminFeedback = null;
+      try {
+        const body = await request.json();
+        if (body.feedback) adminFeedback = body.feedback;
+      } catch (e) {
+        // Body reading failed, treat as no feedback
+      }
+
       const sessionRes = await pool.query(
         `SELECT a.*, u.student_id, u.full_name, u.remaining_sessions
          FROM active_sessions a JOIN users u ON u.id = a.user_id
@@ -160,8 +194,8 @@ export async function POST(request, { params }) {
 
       await pool.query(
         `INSERT INTO sit_in_records
-          (user_id, student_id, full_name, lab_name, purpose, started_at, ended_at, duration_minutes)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)`,
+          (user_id, student_id, full_name, lab_name, purpose, started_at, ended_at, duration_minutes, admin_feedback)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)`,
         [
           session.user_id,
           session.student_id,
@@ -170,6 +204,7 @@ export async function POST(request, { params }) {
           session.purpose,
           session.started_at,
           durationMinutes,
+          adminFeedback
         ]
       )
 
@@ -189,3 +224,49 @@ export async function POST(request, { params }) {
 
   return notFound()
 }
+
+// Student: submit feedback for a past session
+export async function PUT(request, { params }) {
+  await ensureMigrations()
+
+  const parts = await routeParts(params)
+  const auth = authenticateRequest(request)
+  if (auth.response) return auth.response
+
+  // PUT /api/sitin/my/feedback/:recordId
+  if (parts.length === 3 && parts[0] === 'my' && parts[1] === 'feedback') {
+    const recordId = parseInt(parts[2], 10)
+    if (isNaN(recordId)) return notFound()
+
+    const body = await readJson(request)
+    const { feedback, rating } = body
+
+    if (rating !== undefined && (rating < 1 || rating > 5)) {
+      return NextResponse.json({ error: 'Rating must be 1-5' }, { status: 400 })
+    }
+
+    try {
+      // Add columns if missing (idempotent)
+      await pool.query(`ALTER TABLE sit_in_records ADD COLUMN IF NOT EXISTS feedback TEXT`).catch(() => {})
+      await pool.query(`ALTER TABLE sit_in_records ADD COLUMN IF NOT EXISTS rating INTEGER`).catch(() => {})
+
+      const result = await pool.query(
+        `UPDATE sit_in_records
+         SET feedback = COALESCE($1, feedback),
+             rating = COALESCE($2, rating)
+         WHERE id = $3 AND user_id = $4
+         RETURNING id, feedback, rating`,
+        [feedback || null, rating || null, recordId, auth.user.userId]
+      )
+      if (result.rows.length === 0) {
+        return NextResponse.json({ error: 'Record not found or not yours' }, { status: 404 })
+      }
+      return NextResponse.json({ message: 'Feedback submitted', record: result.rows[0] })
+    } catch (error) {
+      console.error(error)
+      return NextResponse.json({ error: 'Failed to submit feedback' }, { status: 500 })
+    }
+  }
+
+  return notFound()
+}

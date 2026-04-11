@@ -4,14 +4,11 @@ import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { Particles } from '@/components/ui/particles'
-import { BorderBeam } from '@/components/ui/border-beam'
 import { BlurFade } from '@/components/ui/blur-fade'
-import { ShimmerButton } from '@/components/ui/shimmer-button'
 import { NumberTicker } from '@/components/ui/number-ticker'
-import { RetroGrid } from '@/components/ui/retro-grid'
 import { ToastStack } from '@/components/ui/toast-stack'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { useToasts } from '@/lib/use-toasts'
-import uc from './../assets/uclogo.png';
 import ccs from './../assets/ccslogo.png';
 import { MonitorCheck, BarChart3, BellRing, ShieldCheck } from 'lucide-react'
 
@@ -209,30 +206,30 @@ export default function Landing() {
 
   return (
     <div
-      className="relative w-screen min-h-screen flex overflow-hidden"
-      style={{ fontFamily: "'Poppins', sans-serif", backgroundColor: '#080a18' }}
+      className="app-theme-shell app-auth-shell relative w-screen min-h-screen flex overflow-hidden"
+      style={{ fontFamily: "'Poppins', sans-serif" }}
     >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
         * { box-sizing: border-box; }
 
         .inp { font-family: 'Poppins', sans-serif; transition: border-color 0.2s; }
-        .inp:focus { outline: none; border-color: #4D2FB2 !important; }
-        .inp::placeholder { color: rgba(255,255,255,0.22); }
-        .inp option { background-color: '#0f1127'; }
+        .inp:focus { outline: none; border-color: var(--app-accent) !important; }
+        .inp::placeholder { color: var(--app-muted); }
+        .inp option { background-color: var(--app-surface); }
 
         .tab-btn { transition: all 0.2s; font-family: 'Poppins', sans-serif; }
         .btn-sso { transition: border-color 0.2s; font-family: 'Poppins', sans-serif; }
-        .btn-sso:hover { border-color: #4D2FB2 !important; }
+        .btn-sso:hover { border-color: var(--app-accent) !important; }
         .stat-card { transition: border-color 0.2s; }
-        .stat-card:hover { border-color: #4D2FB2 !important; }
+        .stat-card:hover { border-color: var(--app-accent) !important; }
 
         .dot-blink { animation: blink 1.2s ease-in-out infinite; }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
 
         .scroll-panel::-webkit-scrollbar { width: 0; display: none; }
         .scroll-panel::-webkit-scrollbar-track { background: transparent; }
-        .scroll-panel::-webkit-scrollbar-thumb { background: #1a1e40; border-radius: 10px; }
+        .scroll-panel::-webkit-scrollbar-thumb { background: var(--app-border); border-radius: 10px; }
         
         .scroll-panel {
           scrollbar-width: none; /* Firefox */
@@ -249,15 +246,18 @@ export default function Landing() {
 
         .divider-v {
           width: 1px;
-          background: #1a1e40;
+          background: var(--app-border);
           align-self: stretch;
           margin: 0 12px;
         }
       `}</style>
 
+      <div className="absolute right-4 top-4 z-30">
+        <ThemeToggle />
+      </div>
+
       {/* Particles */}
-      <Particles className="absolute inset-0 z-0" quantity={100} color="#4D2FB2" ease={80} size={0.5} />
-      <RetroGrid className="absolute inset-0 z-0 opacity-20" />
+      <Particles className="absolute inset-0 z-0" quantity={90} color="#3b82f6" ease={80} size={0.5} />
 
       {/* ══════════ LEFT SIDE ══════════ */}
       <div
@@ -348,10 +348,10 @@ export default function Landing() {
           <BlurFade delay={0.6} inView>
             <div className="flex flex-col gap-2.5">
               {[
-                { icon: <MonitorCheck size={16} color="#B153D7" />, text: 'Real-time occupancy tracking across all labs' },
-                { icon: <BarChart3 size={16} color="#4D2FB2" />, text: 'Smart analytics with peak hour insights' },
-                { icon: <BellRing size={16} color="#F375C2" />, text: 'Instant alerts on capacity thresholds' },
-                { icon: <ShieldCheck size={16} color="#0E21A0" />, text: 'Role-based secure access for students & faculty' },
+                { icon: <MonitorCheck size={16} color="var(--app-accent)" />, text: 'Real-time occupancy tracking across all labs' },
+                { icon: <BarChart3 size={16} color="var(--app-accent)" />, text: 'Smart analytics with peak hour insights' },
+                { icon: <BellRing size={16} color="var(--app-accent)" />, text: 'Instant alerts on capacity thresholds' },
+                { icon: <ShieldCheck size={16} color="var(--app-accent)" />, text: 'Role-based secure access for students & faculty' },
               ].map((f, i) => (
                 <div key={i} className="flex items-center gap-3">
                   <div
@@ -392,11 +392,10 @@ export default function Landing() {
             </div>
           </div>
 
-          {/* Outer container with BorderBeam (non-scrolling) */}
+           {/* Outer container (non-scrolling) */}
           <div className="relative max-w-2xl rounded-2xl sm:rounded-3xl overflow-hidden"
                style={{ backgroundColor: '#0f1127', border: '1px solid #1a1e40' }}>
-            <BorderBeam size={280} duration={10} colorFrom="#0E21A0" colorTo="#F375C2" />
-            
+
             {/* Inner scrollable content */}
             <div className="overflow-y-auto scroll-panel p-5 sm:p-6 lg:p-8" style={{ maxHeight: '80vh' }}>
 
@@ -411,8 +410,8 @@ export default function Landing() {
                   onClick={() => setTab(t)}
                   className="tab-btn flex-1 py-2 rounded-lg text-sm font-semibold"
                   style={{
-                    backgroundColor: tab === t ? '#0E21A0' : 'transparent',
-                    color: tab === t ? '#fff' : 'rgba(255,255,255,0.4)',
+                    backgroundColor: tab === t ? 'var(--app-accent)' : 'transparent',
+                    color: tab === t ? 'var(--app-on-accent)' : 'var(--app-muted)',
                     border: 'none',
                     cursor: 'pointer',
                   }}
@@ -474,15 +473,13 @@ export default function Landing() {
                     <label htmlFor="remember" className="text-xs font-medium cursor-pointer" style={{ color: 'rgba(255,255,255,0.4)' }}>Remember me for 30 days</label>
                   </div>
 
-                  <ShimmerButton 
-                    className="w-full py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-sm font-bold mt-1" 
-                    background={loading ? "#4D2FB2" : "#0E21A0"} 
-                    shimmerColor="#4D2FB2" 
-                    shimmerSize="0.1em"
+                  <button
+                    type="submit"
+                    className="theme-auth-button w-full py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-sm font-bold mt-1 disabled:opacity-60"
                     disabled={loading}
                   >
                     {loading ? 'Signing In...' : 'Sign In'}
-                  </ShimmerButton>
+                  </button>
                 </form>
 
                 <p className="text-center text-xs sm:text-sm mt-4 sm:mt-5" style={{ color: 'rgba(255,255,255,0.35)' }}>
@@ -697,15 +694,13 @@ export default function Landing() {
                     </label>
                   </div>
 
-                  <ShimmerButton 
-                    className="w-full py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-sm font-bold mt-1" 
-                    background={loading ? "#4D2FB2" : "#0E21A0"} 
-                    shimmerColor="#4D2FB2" 
-                    shimmerSize="0.1em"
+                  <button
+                    type="submit"
+                    className="theme-auth-button w-full py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-sm font-bold mt-1 disabled:opacity-60"
                     disabled={loading}
                   >
                     {loading ? 'Creating Account...' : 'Create Account'}
-                  </ShimmerButton>
+                  </button>
                 </form>
 
                 <p className="text-center text-xs sm:text-sm mt-4 sm:mt-5" style={{ color: 'rgba(255,255,255,0.35)' }}>
