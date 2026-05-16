@@ -30,6 +30,10 @@ async function migrate() {
   `).catch(() => {});
 
   await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS reward_points INTEGER DEFAULT 0
+  `).catch(() => {});
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS active_sessions (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -58,6 +62,18 @@ async function migrate() {
   // Add feedback columns to existing table if they don't exist
   await pool.query(`ALTER TABLE sit_in_records ADD COLUMN IF NOT EXISTS feedback TEXT`).catch(() => {});
   await pool.query(`ALTER TABLE sit_in_records ADD COLUMN IF NOT EXISTS rating INTEGER`).catch(() => {});
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS reward_transactions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      delta INTEGER NOT NULL,
+      reason VARCHAR(255),
+      source VARCHAR(50) DEFAULT 'admin',
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `).catch(() => {});
 }
 migrate();
 
@@ -171,6 +187,21 @@ router.post('/sessions/end/:id', authenticateToken, requireAdmin, async (req, re
       'UPDATE users SET remaining_sessions = GREATEST(remaining_sessions - 1, 0) WHERE id = $1',
       [session.user_id]
     );
+
+    try {
+      const pointsAward = 1;
+      await pool.query(
+        'UPDATE users SET reward_points = COALESCE(reward_points, 0) + $1 WHERE id = $2',
+        [pointsAward, session.user_id]
+      );
+      await pool.query(
+        `INSERT INTO reward_transactions (user_id, delta, reason, source, created_by)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [session.user_id, pointsAward, 'Completed sit-in session', 'sitin', req.user.userId]
+      );
+    } catch (rewardErr) {
+      console.error('Reward points update failed:', rewardErr);
+    }
 
     // Remove from active sessions
     await pool.query('DELETE FROM active_sessions WHERE id = $1', [sessionId]);

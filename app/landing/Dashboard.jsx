@@ -2,14 +2,16 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { LogOut, Users, Bell, Settings, Trash2, Plus, X, BarChart3, TrendingUp, Shield, RefreshCw, MonitorPlay, Search, Clock, CheckCircle2, Star, MessageSquare } from 'lucide-react'
+import { LogOut, Users, Bell, Settings, Trash2, Plus, X, BarChart3, TrendingUp, Shield, RefreshCw, MonitorPlay, Search, Clock, CheckCircle2, Star, MessageSquare, CalendarDays, Trophy, FileSpreadsheet, FileText, LineChart } from 'lucide-react'
 import Image from 'next/image'
 import ccs from '../assets/ccslogo.png'
 import { ToastStack } from '@/components/ui/toast-stack'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
+import { TablePagination, paginateItems } from '@/components/ui/table-pagination'
 import { useToasts } from '@/lib/use-toasts'
 
 const API = '/api/auth'
+const TABLE_PAGE_SIZE = 10
 
 // ── Tiny SVG bar chart (no deps) ────────────────────────────────────────────
 function BarChart({ data, color = '#3b82f6' }) {
@@ -98,6 +100,48 @@ export default function AdminDashboard() {
   const [endSessionPrompt, setEndSessionPrompt] = useState(null)
   const [endSessionFeedback, setEndSessionFeedback] = useState('')
 
+  // Reservations
+  const [reservations, setReservations] = useState([])
+  const [reservationLogs, setReservationLogs] = useState([])
+  const [labs, setLabs] = useState([])
+  const [selectedLabId, setSelectedLabId] = useState('')
+  const [manageLabComputers, setManageLabComputers] = useState([])
+
+  // Testimonials
+  const [testimonials, setTestimonials] = useState([])
+  const [testimonialFilter, setTestimonialFilter] = useState('all')
+
+  // Analytics
+  const [analyticsSummary, setAnalyticsSummary] = useState(null)
+  const [analyticsSessions, setAnalyticsSessions] = useState([])
+  const [analyticsLabs, setAnalyticsLabs] = useState([])
+  const [analyticsReservations, setAnalyticsReservations] = useState(null)
+  const [analyticsPeak, setAnalyticsPeak] = useState({ hours: [], days: [] })
+
+  // Reports
+  const [reportType, setReportType] = useState('sitin')
+  const [reportFormat, setReportFormat] = useState('csv')
+  const [reportFrom, setReportFrom] = useState('')
+  const [reportTo, setReportTo] = useState('')
+  const [reportStatus, setReportStatus] = useState('')
+  const [reportHistory, setReportHistory] = useState([])
+  const [reportLoading, setReportLoading] = useState(false)
+
+  // Rewards
+  const [rewardLeaderboard, setRewardLeaderboard] = useState([])
+  const [rewardHistory, setRewardHistory] = useState([])
+  const [rewardAdjust, setRewardAdjust] = useState({ user_id: '', delta: '', reason: '' })
+  const [tablePages, setTablePages] = useState({
+    users: 1,
+    sitinSearch: 1,
+    sitinActive: 1,
+    sitinRecords: 1,
+    pendingReservations: 1,
+    allReservations: 1,
+    testimonials: 1,
+    reports: 1,
+  })
+
   const getToken = () => localStorage.getItem('token')
 
   const fetchUsers = useCallback(async () => {
@@ -136,6 +180,84 @@ export default function AdminDashboard() {
     try {
       const res = await fetch(`${SITIN}/sessions/records`, { headers: { Authorization: `Bearer ${getToken()}` } })
       if (res.ok) setSitinRecords(await res.json())
+    } catch (e) { console.error(e) }
+  }, [])
+
+  const fetchLabs = useCallback(async () => {
+    try {
+      const res = await fetch('/api/reservations/labs', { headers: { Authorization: `Bearer ${getToken()}` } })
+      if (!res.ok) return
+      const data = await res.json()
+      setLabs(data)
+      if (!selectedLabId && data.length > 0) {
+        setSelectedLabId(String(data[0].id))
+      }
+    } catch (e) { console.error(e) }
+  }, [selectedLabId])
+
+  const fetchReservations = useCallback(async () => {
+    try {
+      const [allRes, logsRes] = await Promise.all([
+        fetch('/api/reservations/all', { headers: { Authorization: `Bearer ${getToken()}` } }),
+        fetch('/api/reservations/logs', { headers: { Authorization: `Bearer ${getToken()}` } }),
+      ])
+      if (allRes.ok) setReservations(await allRes.json())
+      if (logsRes.ok) setReservationLogs(await logsRes.json())
+    } catch (e) { console.error(e) }
+  }, [])
+
+  const fetchManageLab = useCallback(async () => {
+    if (!selectedLabId) return
+    try {
+      const res = await fetch(`/api/reservations/lab/${selectedLabId}/manage`, {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      setManageLabComputers(data.computers || [])
+    } catch (e) { console.error(e) }
+  }, [selectedLabId])
+
+  const fetchTestimonials = useCallback(async () => {
+    const statusQuery = testimonialFilter === 'all' ? '' : `?status=${encodeURIComponent(testimonialFilter)}`
+    try {
+      const res = await fetch(`/api/testimonials/all${statusQuery}`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      if (res.ok) setTestimonials(await res.json())
+    } catch (e) { console.error(e) }
+  }, [testimonialFilter])
+
+  const fetchAnalytics = useCallback(async () => {
+    try {
+      const [summaryRes, sessionsRes, labsRes, reservationsRes, peakRes] = await Promise.all([
+        fetch('/api/analytics/summary', { headers: { Authorization: `Bearer ${getToken()}` } }),
+        fetch('/api/analytics/sessions', { headers: { Authorization: `Bearer ${getToken()}` } }),
+        fetch('/api/analytics/labs', { headers: { Authorization: `Bearer ${getToken()}` } }),
+        fetch('/api/analytics/reservations', { headers: { Authorization: `Bearer ${getToken()}` } }),
+        fetch('/api/analytics/peak-hours', { headers: { Authorization: `Bearer ${getToken()}` } }),
+      ])
+      if (summaryRes.ok) setAnalyticsSummary(await summaryRes.json())
+      if (sessionsRes.ok) setAnalyticsSessions(await sessionsRes.json())
+      if (labsRes.ok) setAnalyticsLabs(await labsRes.json())
+      if (reservationsRes.ok) setAnalyticsReservations(await reservationsRes.json())
+      if (peakRes.ok) setAnalyticsPeak(await peakRes.json())
+    } catch (e) { console.error(e) }
+  }, [])
+
+  const fetchReportsHistory = useCallback(async () => {
+    try {
+      const res = await fetch('/api/reports/history', { headers: { Authorization: `Bearer ${getToken()}` } })
+      if (res.ok) setReportHistory(await res.json())
+    } catch (e) { console.error(e) }
+  }, [])
+
+  const fetchRewardsAdmin = useCallback(async () => {
+    try {
+      const [leaderRes, historyRes] = await Promise.all([
+        fetch('/api/rewards/leaderboard?limit=20', { headers: { Authorization: `Bearer ${getToken()}` } }),
+        fetch('/api/rewards/history?limit=100', { headers: { Authorization: `Bearer ${getToken()}` } }),
+      ])
+      if (leaderRes.ok) setRewardLeaderboard(await leaderRes.json())
+      if (historyRes.ok) setRewardHistory(await historyRes.json())
     } catch (e) { console.error(e) }
   }, [])
 
@@ -238,7 +360,33 @@ export default function AdminDashboard() {
     fetchAnnouncements()
     fetchActiveSessions()
     fetchRecords()
-  }, [router, fetchUsers, fetchStats, fetchAnnouncements, fetchActiveSessions, fetchRecords])
+    fetchLabs()
+  }, [router, fetchUsers, fetchStats, fetchAnnouncements, fetchActiveSessions, fetchRecords, fetchLabs])
+
+  useEffect(() => {
+    if (activeTab === 'reservation') {
+      fetchReservations()
+      fetchLabs()
+    }
+    if (activeTab === 'testimonials') {
+      fetchTestimonials()
+    }
+    if (activeTab === 'analytics') {
+      fetchAnalytics()
+    }
+    if (activeTab === 'reports') {
+      fetchReportsHistory()
+    }
+    if (activeTab === 'rewards') {
+      fetchRewardsAdmin()
+    }
+  }, [activeTab, fetchReservations, fetchLabs, fetchTestimonials, fetchAnalytics, fetchReportsHistory, fetchRewardsAdmin])
+
+  useEffect(() => {
+    if (activeTab === 'reservation') {
+      fetchManageLab()
+    }
+  }, [activeTab, selectedLabId, fetchManageLab])
 
   const handleDeleteUser = async (id) => {
     if (!confirm('Delete this user? This cannot be undone.')) return
@@ -369,17 +517,190 @@ export default function AdminDashboard() {
     setSaving(false)
   }
 
+  const handleReservationDecision = async (reservationId, action) => {
+    const notes = action === 'decline' ? prompt('Decline note (optional):', '') || '' : ''
+    try {
+      const res = await fetch(`/api/reservations/${reservationId}/${action}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ admin_notes: notes || null })
+      })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        pushToast({ type: 'success', title: `Reservation ${action}d` })
+        fetchReservations()
+        fetchManageLab()
+      } else {
+        pushToast({ type: 'error', title: data?.error || `Failed to ${action} reservation` })
+      }
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+  }
+
+  const handleComputerStatus = async (computerId, status) => {
+    try {
+      const res = await fetch(`/api/reservations/computer/${computerId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ status })
+      })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        fetchManageLab()
+      } else {
+        pushToast({ type: 'error', title: data?.error || 'Failed to update computer status' })
+      }
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+  }
+
+  const handleReviewTestimonial = async (id, action) => {
+    try {
+      const res = await fetch(`/api/testimonials/${id}/${action}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${getToken()}` }
+      })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        fetchTestimonials()
+      } else {
+        pushToast({ type: 'error', title: data?.error || `Failed to ${action} testimonial` })
+      }
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+  }
+
+  const handleDeleteTestimonial = async (id) => {
+    try {
+      const res = await fetch(`/api/testimonials/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getToken()}` }
+      })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        fetchTestimonials()
+      } else {
+        pushToast({ type: 'error', title: data?.error || 'Failed to delete testimonial' })
+      }
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+  }
+
+  const handleGenerateReport = async () => {
+    setReportLoading(true)
+    const filters = {
+      from: reportFrom || undefined,
+      to: reportTo || undefined,
+      status: reportStatus || undefined,
+    }
+    try {
+      const res = await fetch('/api/reports/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ type: reportType, format: reportFormat, filters, store: true })
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        pushToast({ type: 'error', title: data?.error || 'Failed to generate report' })
+        setReportLoading(false)
+        return
+      }
+      const blob = await res.blob()
+      const fileName = `${reportType}-${new Date().getTime()}.${reportFormat === 'pdf' ? 'pdf' : 'csv'}`
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      fetchReportsHistory()
+      pushToast({ type: 'success', title: 'Report generated' })
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+    setReportLoading(false)
+  }
+
+  const handleDownloadHistoryReport = async (id, format) => {
+    try {
+      const res = await fetch(`/api/reports/${id}/download`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        pushToast({ type: 'error', title: data?.error || 'Failed to download report' })
+        return
+      }
+      const blob = await res.blob()
+      const fileName = `report-${id}.${format === 'pdf' ? 'pdf' : 'csv'}`
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+  }
+
+  const handleAdjustRewardPoints = async () => {
+    const userId = Number.parseInt(rewardAdjust.user_id, 10)
+    const delta = Number.parseInt(rewardAdjust.delta, 10)
+    if (!Number.isInteger(userId) || !Number.isInteger(delta) || delta === 0) {
+      pushToast({ type: 'warning', title: 'Valid user ID and non-zero points are required' })
+      return
+    }
+
+    try {
+      const res = await fetch('/api/rewards/adjust', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ user_id: userId, delta, reason: rewardAdjust.reason || null })
+      })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        setRewardAdjust({ user_id: '', delta: '', reason: '' })
+        fetchRewardsAdmin()
+        pushToast({ type: 'success', title: 'Points adjusted' })
+      } else {
+        pushToast({ type: 'error', title: data?.error || 'Failed to adjust points' })
+      }
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+  }
+
   const handleLogout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
     router.push('/')
   }
 
+  const setTablePage = useCallback((tableKey, nextPage) => {
+    setTablePages((prev) => ({ ...prev, [tableKey]: nextPage }))
+  }, [])
+
   const filteredUsers = users.filter(u =>
     u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
     u.student_id?.toLowerCase().includes(search.toLowerCase()) ||
     u.email?.toLowerCase().includes(search.toLowerCase())
   )
+  const pendingReservations = reservations.filter((r) => r.status === 'pending')
+  const usersPage = paginateItems(filteredUsers, tablePages.users, TABLE_PAGE_SIZE)
+  const sitinSearchPage = paginateItems(sitinResults, tablePages.sitinSearch, TABLE_PAGE_SIZE)
+  const sitinActivePage = paginateItems(activeSessions, tablePages.sitinActive, TABLE_PAGE_SIZE)
+  const sitinRecordsPage = paginateItems(sitinRecords, tablePages.sitinRecords, TABLE_PAGE_SIZE)
+  const pendingReservationsPage = paginateItems(pendingReservations, tablePages.pendingReservations, TABLE_PAGE_SIZE)
+  const allReservationsPage = paginateItems(reservations, tablePages.allReservations, TABLE_PAGE_SIZE)
+  const testimonialsPage = paginateItems(testimonials, tablePages.testimonials, TABLE_PAGE_SIZE)
+  const reportsPage = paginateItems(reportHistory, tablePages.reports, TABLE_PAGE_SIZE)
 
   const courseBreakdown = users.reduce((acc, u) => {
     if (!u.course) return acc
@@ -487,10 +808,15 @@ export default function AdminDashboard() {
         {/* TABS */}
         <div className="flex gap-8 mb-8 border-b border-[rgba(255,255,255,0.05)]">
           {[
-                      { key: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={16} /> },
+                       { key: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={16} /> },
             { key: 'users', label: 'Manage Users', icon: <Users size={16} /> },
             { key: 'sitin', label: 'Sit-In Sessions', icon: <MonitorPlay size={16} /> },
             { key: 'announcements', label: 'Announcements', icon: <Bell size={16} /> },
+            { key: 'reservation', label: 'Reservations', icon: <CalendarDays size={16} /> },
+            { key: 'testimonials', label: 'Testimonials', icon: <MessageSquare size={16} /> },
+            { key: 'analytics', label: 'Analytics', icon: <LineChart size={16} /> },
+            { key: 'reports', label: 'Reports', icon: <FileSpreadsheet size={16} /> },
+            { key: 'rewards', label: 'Rewards', icon: <Trophy size={16} /> },
             { key: 'settings', label: 'Settings', icon: <Settings size={16} /> },
           ].map(t => (
             <button key={t.key} onClick={() => setActiveTab(t.key)}
@@ -672,9 +998,9 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUsers.length === 0 ? (
+                    {usersPage.totalItems === 0 ? (
                       <tr><td colSpan={7} className="text-center text-gray-600 py-12 text-sm">No users found</td></tr>
-                    ) : filteredUsers.map(u => (
+                    ) : usersPage.items.map(u => (
                       <tr key={u.id} className="user-row border-b border-[rgba(255,255,255,0.03)]">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
@@ -705,6 +1031,13 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
+              <TablePagination
+                page={usersPage.currentPage}
+                totalPages={usersPage.totalPages}
+                totalItems={usersPage.totalItems}
+                pageSize={TABLE_PAGE_SIZE}
+                onPageChange={(nextPage) => setTablePage('users', nextPage)}
+              />
             </div>
           </div>
         )}
@@ -763,7 +1096,7 @@ export default function AdminDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {sitinResults.map(s => (
+                        {sitinSearchPage.items.map(s => (
                           <tr key={s.id} className="user-row border-b border-[rgba(255,255,255,0.03)]">
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3">
@@ -796,6 +1129,13 @@ export default function AdminDashboard() {
                         ))}
                       </tbody>
                     </table>
+                    <TablePagination
+                      page={sitinSearchPage.currentPage}
+                      totalPages={sitinSearchPage.totalPages}
+                      totalItems={sitinSearchPage.totalItems}
+                      pageSize={TABLE_PAGE_SIZE}
+                      onPageChange={(nextPage) => setTablePage('sitinSearch', nextPage)}
+                    />
                   </div>
                 )}
                 {sitinSearch && sitinResults.length === 0 && (
@@ -825,9 +1165,9 @@ export default function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {activeSessions.length === 0 ? (
+                      {sitinActivePage.totalItems === 0 ? (
                         <tr><td colSpan={7} className="text-center text-gray-600 py-12 text-sm">No active sessions at the moment</td></tr>
-                      ) : activeSessions.map(s => (
+                      ) : sitinActivePage.items.map(s => (
                         <tr key={s.id} className="user-row border-b border-[rgba(255,255,255,0.03)]">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
@@ -860,6 +1200,13 @@ export default function AdminDashboard() {
                       ))}
                     </tbody>
                   </table>
+                  <TablePagination
+                    page={sitinActivePage.currentPage}
+                    totalPages={sitinActivePage.totalPages}
+                    totalItems={sitinActivePage.totalItems}
+                    pageSize={TABLE_PAGE_SIZE}
+                    onPageChange={(nextPage) => setTablePage('sitinActive', nextPage)}
+                  />
                 </div>
               </div>
             )}
@@ -963,9 +1310,9 @@ export default function AdminDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {sitinRecords.length === 0 ? (
+                        {sitinRecordsPage.totalItems === 0 ? (
                           <tr><td colSpan={9} className="text-center text-gray-600 py-12 text-sm">No sit-in records yet</td></tr>
-                        ) : sitinRecords.map(r => (
+                        ) : sitinRecordsPage.items.map(r => (
                           <tr key={r.id} className="user-row border-b border-[rgba(255,255,255,0.03)]">
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3">
@@ -1043,6 +1390,13 @@ export default function AdminDashboard() {
                       </tbody>
                     </table>
                   </div>
+                  <TablePagination
+                    page={sitinRecordsPage.currentPage}
+                    totalPages={sitinRecordsPage.totalPages}
+                    totalItems={sitinRecordsPage.totalItems}
+                    pageSize={TABLE_PAGE_SIZE}
+                    onPageChange={(nextPage) => setTablePage('sitinRecords', nextPage)}
+                  />
                 </div>
               </div>
               )
@@ -1114,6 +1468,488 @@ export default function AdminDashboard() {
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── RESERVATIONS TAB ── */}
+        {activeTab === 'reservation' && (
+          <div className="flex flex-col gap-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold">Reservation Management</h2>
+                <p className="text-sm text-gray-400">Review requests, control lab PCs, and view audit logs.</p>
+              </div>
+              <button
+                onClick={() => { fetchReservations(); fetchManageLab() }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.05)]"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div className="bento-card p-0 overflow-hidden">
+              <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)]">
+                <h3 className="font-bold">Pending Requests</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                      {['Student', 'Lab', 'PC', 'Date', 'Slot', 'Purpose', 'Action'].map((h) => (
+                        <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingReservationsPage.totalItems === 0 ? (
+                      <tr><td colSpan={7} className="text-center text-gray-600 py-8 text-sm">No pending reservations</td></tr>
+                    ) : pendingReservationsPage.items.map((r) => (
+                      <tr key={r.id} className="border-b border-[rgba(255,255,255,0.03)]">
+                        <td className="px-6 py-4 text-sm">{r.full_name} <span className="text-xs text-gray-500">({r.student_id})</span></td>
+                        <td className="px-6 py-4 text-sm">{r.lab_name}</td>
+                        <td className="px-6 py-4 text-sm">PC {r.computer_number}</td>
+                        <td className="px-6 py-4 text-sm text-gray-400">{r.date}</td>
+                        <td className="px-6 py-4 text-sm text-gray-400">{r.time_slot}</td>
+                        <td className="px-6 py-4 text-sm text-gray-300">{r.purpose || '—'}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex gap-2">
+                            <button onClick={() => handleReservationDecision(r.id, 'approve')} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">Approve</button>
+                            <button onClick={() => handleReservationDecision(r.id, 'decline')} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/20 border border-red-500/40 text-red-300">Decline</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <TablePagination
+                page={pendingReservationsPage.currentPage}
+                totalPages={pendingReservationsPage.totalPages}
+                totalItems={pendingReservationsPage.totalItems}
+                pageSize={TABLE_PAGE_SIZE}
+                onPageChange={(nextPage) => setTablePage('pendingReservations', nextPage)}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div className="bento-card">
+                <div className="flex items-center justify-between mb-5">
+                  <div>
+                    <h3 className="font-bold text-lg">PC Management</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">Click to toggle availability / maintenance</p>
+                  </div>
+                  <select
+                    value={selectedLabId}
+                    onChange={(e) => setSelectedLabId(e.target.value)}
+                    className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs"
+                  >
+                    {labs.map((lab) => (
+                      <option key={lab.id} value={lab.id} className="bg-[#0d0d1f]">{lab.lab_name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Summary Counters */}
+                {(() => {
+                  const availCount = manageLabComputers.filter(pc => pc.display_status === 'available').length;
+                  const reservedCount = manageLabComputers.filter(pc => pc.display_status === 'reserved').length;
+                  const maintCount = manageLabComputers.filter(pc => pc.display_status === 'maintenance').length;
+                  return (
+                    <div className="grid grid-cols-3 gap-3 mb-5">
+                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
+                        <div className="w-3 h-3 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
+                        <div>
+                          <div className="text-lg font-black text-emerald-400">{availCount}</div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/60">Available</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
+                        <div className="w-3 h-3 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
+                        <div>
+                          <div className="text-lg font-black text-amber-400">{reservedCount}</div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400/60">Reserved</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-500/8 border border-gray-500/20">
+                        <div className="w-3 h-3 rounded-full bg-gray-400 shadow-[0_0_8px_rgba(156,163,175,0.3)]" />
+                        <div>
+                          <div className="text-lg font-black text-gray-400">{maintCount}</div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400/60">Maintenance</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 gap-2.5">
+                  {manageLabComputers.map((pc) => {
+                    const canToggleMaintenance = pc.display_status !== 'reserved'
+                    const isAvailable = pc.display_status === 'available';
+                    const isReserved = pc.display_status === 'reserved';
+                    const isMaintenance = pc.display_status === 'maintenance';
+                    return (
+                      <button
+                        key={pc.id}
+                        onClick={() => canToggleMaintenance && handleComputerStatus(pc.id, isMaintenance ? 'available' : 'maintenance')}
+                        disabled={!canToggleMaintenance}
+                        className={`group relative rounded-xl text-xs border-2 transition-all duration-200 flex flex-col items-center justify-center gap-1 min-h-[68px] ${
+                          isMaintenance
+                            ? 'bg-gradient-to-b from-gray-800/60 to-gray-900/60 border-gray-600/40 text-gray-400 hover:border-gray-500/60 hover:bg-gray-700/40'
+                            : isReserved
+                              ? 'bg-gradient-to-b from-amber-500/15 to-amber-900/20 border-amber-500/50 text-amber-200 cursor-not-allowed'
+                              : 'bg-gradient-to-b from-emerald-500/15 to-emerald-900/10 border-emerald-500/40 text-emerald-300 hover:border-emerald-400/70 hover:shadow-[0_0_16px_rgba(52,211,153,0.15)] hover:scale-[1.04]'
+                        }`}
+                        title={
+                          isReserved
+                            ? `Reserved by ${pc.reserved_by_name || 'someone'} • ${pc.reservation_date || ''} ${pc.reservation_time_slot || ''}`.trim()
+                            : `Click to mark ${isMaintenance ? 'available' : 'maintenance'}`
+                        }
+                      >
+                        {/* Status indicator dot */}
+                        <div className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${
+                          isAvailable ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)] animate-pulse' 
+                          : isReserved ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]' 
+                          : 'bg-gray-500'
+                        }`} />
+
+                        {/* Icon */}
+                        <div className={`text-sm ${isMaintenance ? 'opacity-40' : ''}`}>
+                          {isAvailable ? '🖥️' : isReserved ? '🔒' : '🔧'}
+                        </div>
+
+                        <span className="font-bold text-[11px] leading-none">PC {pc.computer_number}</span>
+
+                        {isReserved && (
+                          <span className="text-[9px] leading-tight max-w-full truncate px-0.5 text-amber-300/80 font-medium">
+                            {pc.reserved_by_name || 'Reserved'}
+                          </span>
+                        )}
+                        {isMaintenance && (
+                          <span className="text-[9px] leading-tight text-gray-500 font-medium">Offline</span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="bento-card p-0 overflow-hidden">
+                <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)]">
+                  <h3 className="font-bold">Reservation Logs</h3>
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {reservationLogs.slice(0, 100).map((log) => (
+                    <div key={log.id} className="px-6 py-3 border-b border-[rgba(255,255,255,0.03)]">
+                      <div className="text-xs uppercase text-purple-400 font-bold">{log.action}</div>
+                      <div className="text-sm">{log.student_name || 'Student'} · {log.lab_name || 'Lab'} · PC {log.computer_number ?? '-'}</div>
+                      <div className="text-xs text-gray-500">{new Date(log.created_at).toLocaleString()}</div>
+                      {log.details && <div className="text-xs text-gray-400 mt-1">{log.details}</div>}
+                    </div>
+                  ))}
+                  {reservationLogs.length === 0 && <div className="p-6 text-sm text-gray-600">No logs yet.</div>}
+                </div>
+              </div>
+            </div>
+
+            <div className="bento-card p-0 overflow-hidden">
+              <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)]">
+                <h3 className="font-bold">All Reservations</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                      {['Student', 'Lab', 'PC', 'Date', 'Slot', 'Status', 'Notes'].map((h) => (
+                        <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allReservationsPage.items.map((r) => (
+                      <tr key={r.id} className="border-b border-[rgba(255,255,255,0.03)]">
+                        <td className="px-6 py-4 text-sm">{r.full_name}</td>
+                        <td className="px-6 py-4 text-sm">{r.lab_name}</td>
+                        <td className="px-6 py-4 text-sm">PC {r.computer_number}</td>
+                        <td className="px-6 py-4 text-sm text-gray-400">{r.date}</td>
+                        <td className="px-6 py-4 text-sm text-gray-400">{r.time_slot}</td>
+                        <td className="px-6 py-4">
+                          <span className="px-2 py-1 rounded text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 uppercase">{r.status}</span>
+                        </td>
+                        <td className="px-6 py-4 text-xs text-gray-400">{r.admin_notes || '—'}</td>
+                      </tr>
+                    ))}
+                    {allReservationsPage.totalItems === 0 && <tr><td colSpan={7} className="text-center text-gray-600 py-8 text-sm">No reservations yet</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              <TablePagination
+                page={allReservationsPage.currentPage}
+                totalPages={allReservationsPage.totalPages}
+                totalItems={allReservationsPage.totalItems}
+                pageSize={TABLE_PAGE_SIZE}
+                onPageChange={(nextPage) => setTablePage('allReservations', nextPage)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ── TESTIMONIALS TAB ── */}
+        {activeTab === 'testimonials' && (
+          <div className="flex flex-col gap-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold">Testimonials</h2>
+                <p className="text-sm text-gray-400">Approve, reject, or remove student testimonials.</p>
+              </div>
+              <div className="flex gap-2">
+                {['all', 'pending', 'approved', 'rejected'].map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setTestimonialFilter(status)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase ${
+                      testimonialFilter === status ? 'bg-purple-500/25 border border-purple-500/40 text-purple-300' : 'bg-white/5 text-gray-400 border border-white/10'
+                    }`}
+                  >
+                    {status}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="bento-card p-0 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                      {['Student', 'Rating', 'Content', 'Status', 'Date', 'Action'].map((h) => (
+                        <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {testimonialsPage.items.map((t) => (
+                      <tr key={t.id} className="border-b border-[rgba(255,255,255,0.03)]">
+                        <td className="px-6 py-4 text-sm">{t.full_name} <span className="text-xs text-gray-500">({t.student_id})</span></td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-0.5">
+                            {[1, 2, 3, 4, 5].map((n) => <Star key={n} size={13} className={t.rating >= n ? 'text-amber-400 fill-amber-400' : 'text-gray-700'} />)}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-300">{t.content}</td>
+                        <td className="px-6 py-4"><span className="px-2 py-1 rounded text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 uppercase">{t.status}</span></td>
+                        <td className="px-6 py-4 text-xs text-gray-500">{new Date(t.created_at).toLocaleString()}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex gap-2">
+                            <button onClick={() => handleReviewTestimonial(t.id, 'approve')} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">Approve</button>
+                            <button onClick={() => handleReviewTestimonial(t.id, 'reject')} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-yellow-500/20 border border-yellow-500/40 text-yellow-300">Reject</button>
+                            <button onClick={() => handleDeleteTestimonial(t.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/20 border border-red-500/40 text-red-300">Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {testimonialsPage.totalItems === 0 && <tr><td colSpan={6} className="text-center text-gray-600 py-8 text-sm">No testimonials found</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              <TablePagination
+                page={testimonialsPage.currentPage}
+                totalPages={testimonialsPage.totalPages}
+                totalItems={testimonialsPage.totalItems}
+                pageSize={TABLE_PAGE_SIZE}
+                onPageChange={(nextPage) => setTablePage('testimonials', nextPage)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ── ANALYTICS TAB ── */}
+        {activeTab === 'analytics' && (
+          <div className="flex flex-col gap-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold">Analytics Dashboard</h2>
+                <p className="text-sm text-gray-400">Usage trends, lab utilization, and peak hours.</p>
+              </div>
+              <button onClick={fetchAnalytics} className="px-4 py-2 rounded-xl text-xs font-bold bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.05)]">Refresh</button>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="bento-card"><div className="text-xs text-gray-500 uppercase">Total Users</div><div className="text-2xl font-black">{analyticsSummary?.total_users ?? 0}</div></div>
+              <div className="bento-card"><div className="text-xs text-gray-500 uppercase">Total Sessions</div><div className="text-2xl font-black">{analyticsSummary?.total_sessions ?? 0}</div></div>
+              <div className="bento-card"><div className="text-xs text-gray-500 uppercase">Avg Duration</div><div className="text-2xl font-black">{analyticsSummary?.average_duration_minutes ?? 0}m</div></div>
+              <div className="bento-card"><div className="text-xs text-gray-500 uppercase">Active Sessions</div><div className="text-2xl font-black">{analyticsSummary?.active_sessions ?? 0}</div></div>
+              <div className="bento-card"><div className="text-xs text-gray-500 uppercase">Reservations</div><div className="text-2xl font-black">{analyticsSummary?.reservations?.total ?? 0}</div></div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div className="bento-card p-0 overflow-hidden">
+                <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)] font-bold">Sessions by Date</div>
+                <div className="max-h-80 overflow-y-auto">
+                  {analyticsSessions.map((row) => (
+                    <div key={row.date} className="px-6 py-3 border-b border-[rgba(255,255,255,0.03)] flex items-center justify-between">
+                      <div className="text-sm">{row.date}</div>
+                      <div className="text-xs text-gray-400">{row.count} sessions · avg {row.avg_duration}m</div>
+                    </div>
+                  ))}
+                  {analyticsSessions.length === 0 && <div className="p-6 text-sm text-gray-600">No session analytics yet.</div>}
+                </div>
+              </div>
+              <div className="bento-card p-0 overflow-hidden">
+                <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)] font-bold">Lab Utilization</div>
+                <div className="max-h-80 overflow-y-auto">
+                  {analyticsLabs.map((row) => (
+                    <div key={row.lab_name} className="px-6 py-3 border-b border-[rgba(255,255,255,0.03)] flex items-center justify-between">
+                      <div className="text-sm">{row.lab_name}</div>
+                      <div className="text-xs text-gray-400">{row.sessions} sessions · avg {row.avg_duration}m</div>
+                    </div>
+                  ))}
+                  {analyticsLabs.length === 0 && <div className="p-6 text-sm text-gray-600">No lab analytics yet.</div>}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div className="bento-card">
+                <h3 className="font-bold mb-3">Reservation Status</h3>
+                <div className="space-y-2">
+                  {Object.entries(analyticsReservations?.by_status || {}).map(([status, count]) => (
+                    <div key={status} className="flex items-center justify-between text-sm">
+                      <span className="uppercase text-gray-400">{status}</span>
+                      <span className="font-bold">{count}</span>
+                    </div>
+                  ))}
+                  {Object.keys(analyticsReservations?.by_status || {}).length === 0 && <div className="text-sm text-gray-600">No reservation data.</div>}
+                </div>
+              </div>
+              <div className="bento-card">
+                <h3 className="font-bold mb-3">Peak Hours</h3>
+                <div className="space-y-2">
+                  {(analyticsPeak?.hours || []).map((h) => (
+                    <div key={h.hour} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-400">{String(h.hour).padStart(2, '0')}:00</span>
+                      <span className="font-bold">{h.count}</span>
+                    </div>
+                  ))}
+                  {(analyticsPeak?.hours || []).length === 0 && <div className="text-sm text-gray-600">No peak-hour data.</div>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── REPORTS TAB ── */}
+        {activeTab === 'reports' && (
+          <div className="flex flex-col gap-6">
+            <div>
+              <h2 className="text-2xl font-bold">Reports</h2>
+              <p className="text-sm text-gray-400">Generate CSV/PDF exports and download report history.</p>
+            </div>
+
+            <div className="bento-card">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <select value={reportType} onChange={(e) => setReportType(e.target.value)} className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm">
+                  {['sitin', 'reservations', 'testimonials', 'users', 'labs'].map((type) => <option key={type} value={type} className="bg-[#0d0d1f]">{type}</option>)}
+                </select>
+                <select value={reportFormat} onChange={(e) => setReportFormat(e.target.value)} className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm">
+                  <option value="csv" className="bg-[#0d0d1f]">CSV</option>
+                  <option value="pdf" className="bg-[#0d0d1f]">PDF</option>
+                </select>
+                <input type="date" value={reportFrom} onChange={(e) => setReportFrom(e.target.value)} className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm" />
+                <input type="date" value={reportTo} onChange={(e) => setReportTo(e.target.value)} className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm" />
+                <input type="text" value={reportStatus} onChange={(e) => setReportStatus(e.target.value)} placeholder="status (optional)" className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm placeholder-gray-600" />
+              </div>
+              <button onClick={handleGenerateReport} disabled={reportLoading} className="mt-4 px-5 py-2.5 rounded-xl text-sm font-bold bg-gradient-to-r from-red-500 to-orange-500 text-white hover:opacity-90 disabled:opacity-50">
+                {reportLoading ? 'Generating...' : 'Generate Report'}
+              </button>
+            </div>
+
+            <div className="bento-card p-0 overflow-hidden">
+              <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)] font-bold">Report History</div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                      {['Type', 'Format', 'Created', 'Action'].map((h) => (
+                        <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reportsPage.items.map((item) => (
+                      <tr key={item.id} className="border-b border-[rgba(255,255,255,0.03)]">
+                        <td className="px-6 py-4 text-sm uppercase">{item.report_type}</td>
+                        <td className="px-6 py-4 text-sm uppercase">{item.format}</td>
+                        <td className="px-6 py-4 text-xs text-gray-500">{new Date(item.created_at).toLocaleString()}</td>
+                        <td className="px-6 py-4">
+                          <button onClick={() => handleDownloadHistoryReport(item.id, item.format)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-500/20 border border-blue-500/40 text-blue-300">
+                            Download
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {reportsPage.totalItems === 0 && <tr><td colSpan={4} className="text-center text-gray-600 py-8 text-sm">No generated reports yet</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              <TablePagination
+                page={reportsPage.currentPage}
+                totalPages={reportsPage.totalPages}
+                totalItems={reportsPage.totalItems}
+                pageSize={TABLE_PAGE_SIZE}
+                onPageChange={(nextPage) => setTablePage('reports', nextPage)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ── REWARDS TAB ── */}
+        {activeTab === 'rewards' && (
+          <div className="flex flex-col gap-6">
+            <div>
+              <h2 className="text-2xl font-bold">Rewards Management</h2>
+              <p className="text-sm text-gray-400">Adjust points and monitor leaderboard/history.</p>
+            </div>
+
+            <div className="bento-card">
+              <h3 className="font-bold mb-3">Adjust Student Points</h3>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <input value={rewardAdjust.user_id} onChange={(e) => setRewardAdjust((p) => ({ ...p, user_id: e.target.value }))} placeholder="User ID" className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm placeholder-gray-600" />
+                <input value={rewardAdjust.delta} onChange={(e) => setRewardAdjust((p) => ({ ...p, delta: e.target.value }))} placeholder="Delta (+/-)" className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm placeholder-gray-600" />
+                <input value={rewardAdjust.reason} onChange={(e) => setRewardAdjust((p) => ({ ...p, reason: e.target.value }))} placeholder="Reason (optional)" className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm placeholder-gray-600" />
+                <button onClick={handleAdjustRewardPoints} className="px-5 py-3 rounded-xl text-sm font-bold bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">Apply</button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div className="bento-card p-0 overflow-hidden">
+                <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)] font-bold">Leaderboard</div>
+                <div className="max-h-96 overflow-y-auto">
+                  {rewardLeaderboard.map((row, idx) => (
+                    <div key={row.id} className="px-6 py-3 border-b border-[rgba(255,255,255,0.03)] flex items-center justify-between">
+                      <div className="text-sm"><span className="text-gray-500 mr-2">#{idx + 1}</span>{row.full_name}</div>
+                      <div className="text-amber-300 font-bold">{row.reward_points}</div>
+                    </div>
+                  ))}
+                  {rewardLeaderboard.length === 0 && <div className="p-6 text-sm text-gray-600">No leaderboard data.</div>}
+                </div>
+              </div>
+
+              <div className="bento-card p-0 overflow-hidden">
+                <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)] font-bold">Reward History</div>
+                <div className="max-h-96 overflow-y-auto">
+                  {rewardHistory.map((entry) => (
+                    <div key={entry.id} className="px-6 py-3 border-b border-[rgba(255,255,255,0.03)]">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm">{entry.full_name || `User ${entry.user_id}`}</div>
+                        <div className={`font-bold text-sm ${entry.delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{entry.delta >= 0 ? `+${entry.delta}` : entry.delta}</div>
+                      </div>
+                      <div className="text-xs text-gray-500">{entry.reason || 'No reason'} · {new Date(entry.created_at).toLocaleString()}</div>
+                    </div>
+                  ))}
+                  {rewardHistory.length === 0 && <div className="p-6 text-sm text-gray-600">No reward history yet.</div>}
+                </div>
+              </div>
             </div>
           </div>
         )}

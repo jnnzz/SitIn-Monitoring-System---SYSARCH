@@ -2,12 +2,15 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { LogOut, User, Bell, BookOpen, History, Star, ChevronRight, X, MessageSquare, CheckCheck, Clock, Monitor, BookMarked, Zap, TrendingDown } from 'lucide-react'
+import { LogOut, User, Bell, BookOpen, History, Star, ChevronRight, X, MessageSquare, CheckCheck, Clock, Monitor, BookMarked, Zap, TrendingDown, CalendarDays, Trophy, Award } from 'lucide-react'
 import Image from 'next/image'
 import ccs from '../assets/ccslogo.png'
 import { ToastStack } from '@/components/ui/toast-stack'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
+import { TablePagination, paginateItems } from '@/components/ui/table-pagination'
 import { useToasts } from '@/lib/use-toasts'
+
+const TABLE_PAGE_SIZE = 10
 
 const rules = [
   {
@@ -157,6 +160,31 @@ export default function StudentDashboard() {
   const [editData, setEditData] = useState({ course: '', year_level: '', address: '' })
   const [saving, setSaving] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
+
+  // Reservation
+  const [reservationEnabled, setReservationEnabled] = useState(false)
+  const [labs, setLabs] = useState([])
+  const [selectedLabId, setSelectedLabId] = useState('')
+  const [selectedDate, setSelectedDate] = useState('')
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState('08:00-10:00')
+  const [labComputers, setLabComputers] = useState([])
+  const [myReservations, setMyReservations] = useState([])
+  const [reservationPurpose, setReservationPurpose] = useState('')
+  const [confirmReservationModal, setConfirmReservationModal] = useState(null)
+
+  // Testimonials
+  const [myTestimonials, setMyTestimonials] = useState([])
+  const [testimonialForm, setTestimonialForm] = useState({ content: '', rating: 5 })
+
+  // Rewards
+  const [rewardsSummary, setRewardsSummary] = useState({ points: 0, transactions: [] })
+  const [leaderboard, setLeaderboard] = useState([])
+  const [tablePages, setTablePages] = useState({
+    history: 1,
+    myReservations: 1,
+    myTestimonials: 1,
+    rewardTransactions: 1,
+  })
   const { toasts, pushToast, removeToast } = useToasts()
   const fileInputRef = useRef(null)
 
@@ -207,12 +235,68 @@ export default function StudentDashboard() {
       if (!res.ok) return
       const profile = await res.json()
       setUser(profile)
+      setReservationEnabled(Boolean(profile?.reservation_enabled))
       localStorage.setItem('user', JSON.stringify(profile))
       setEditData({
         course: profile?.course || '',
         year_level: profile?.year_level || '',
         address: profile?.address || ''
       })
+    } catch (e) { console.error(e) }
+  }, [])
+
+  const fetchLabs = useCallback(async () => {
+    try {
+      const res = await fetch('/api/reservations/labs', {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      setLabs(data)
+      if (!selectedLabId && data.length > 0) {
+        setSelectedLabId(String(data[0].id))
+      }
+    } catch (e) { console.error(e) }
+  }, [selectedLabId])
+
+  const fetchMyReservations = useCallback(async () => {
+    try {
+      const res = await fetch('/api/reservations/my', {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      })
+      if (res.ok) setMyReservations(await res.json())
+    } catch (e) { console.error(e) }
+  }, [])
+
+  const fetchLabComputers = useCallback(async () => {
+    if (!selectedLabId || !selectedTimeSlot || !reservationEnabled) return
+    const dateToUse = selectedDate || new Date().toISOString().split('T')[0]
+    try {
+      const params = new URLSearchParams({ date: dateToUse, time_slot: selectedTimeSlot })
+      const res = await fetch(`/api/reservations/lab/${selectedLabId}/computers?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      })
+      if (res.ok) setLabComputers(await res.json())
+    } catch (e) { console.error(e) }
+  }, [selectedLabId, selectedDate, selectedTimeSlot, reservationEnabled])
+
+  const fetchMyTestimonials = useCallback(async () => {
+    try {
+      const res = await fetch('/api/testimonials/my', {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      })
+      if (res.ok) setMyTestimonials(await res.json())
+    } catch (e) { console.error(e) }
+  }, [])
+
+  const fetchRewards = useCallback(async () => {
+    try {
+      const [meRes, boardRes] = await Promise.all([
+        fetch('/api/rewards/me', { headers: { Authorization: `Bearer ${getToken()}` } }),
+        fetch('/api/rewards/leaderboard?limit=10', { headers: { Authorization: `Bearer ${getToken()}` } }),
+      ])
+      if (meRes.ok) setRewardsSummary(await meRes.json())
+      if (boardRes.ok) setLeaderboard(await boardRes.json())
     } catch (e) { console.error(e) }
   }, [])
 
@@ -243,6 +327,23 @@ export default function StudentDashboard() {
   useEffect(() => {
     if (activeTab === 'history') fetchHistory()
   }, [activeTab, fetchHistory])
+
+  useEffect(() => {
+    if (activeTab === 'reservation') {
+      fetchLabs()
+      fetchMyReservations()
+    }
+    if (activeTab === 'testimonials') {
+      fetchMyTestimonials()
+    }
+    if (activeTab === 'rewards') {
+      fetchRewards()
+    }
+  }, [activeTab, fetchLabs, fetchMyReservations, fetchMyTestimonials, fetchRewards])
+
+  useEffect(() => {
+    fetchLabComputers()
+  }, [fetchLabComputers])
 
   // Close notification panel when clicking outside
   useEffect(() => {
@@ -378,6 +479,167 @@ export default function StudentDashboard() {
     router.push('/')
   }
 
+  const handleReservationToggle = async (enabled) => {
+    try {
+      const res = await fetch('/api/reservations/toggle', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ enabled })
+      })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        setReservationEnabled(Boolean(data?.reservation_enabled))
+        pushToast({ type: 'success', title: enabled ? 'Reservation enabled' : 'Reservation disabled' })
+      } else {
+        pushToast({ type: 'error', title: data?.error || 'Failed to update reservation toggle' })
+      }
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+  }
+
+  const handleCreateReservation = (computer) => {
+    if (!selectedLabId || !selectedTimeSlot) {
+      pushToast({ type: 'warning', title: 'Select lab and time slot first' })
+      return
+    }
+
+    const labName = labs.find(l => String(l.id) === String(selectedLabId))?.lab_name || 'Unknown Lab'
+    const displayDate = selectedDate || new Date().toISOString().split('T')[0]
+    
+    setConfirmReservationModal({
+      computer,
+      labName,
+      date: displayDate
+    })
+  }
+
+  const handleConfirmReservation = async () => {
+    if (!confirmReservationModal) return
+
+    const { computer } = confirmReservationModal
+    const displayDate = selectedDate || new Date().toISOString().split('T')[0]
+
+    try {
+      const res = await fetch('/api/reservations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({
+          lab_id: Number(selectedLabId),
+          computer_id: computer.id,
+          date: displayDate,
+          time_slot: selectedTimeSlot,
+          purpose: reservationPurpose || null
+        })
+      })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        pushToast({ type: 'success', title: `PC #${computer.computer_number} reserved` })
+        fetchLabComputers()
+        fetchMyReservations()
+        setReservationEnabled(true)
+        setConfirmReservationModal(null)
+      } else {
+        pushToast({ type: 'error', title: data?.error || 'Failed to create reservation' })
+      }
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+  }
+
+  const handleCancelReservation = async (reservationId) => {
+    try {
+      const res = await fetch(`/api/reservations/${reservationId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getToken()}` }
+      })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        pushToast({ type: 'success', title: 'Reservation cancelled' })
+        fetchMyReservations()
+        fetchLabComputers()
+      } else {
+        pushToast({ type: 'error', title: data?.error || 'Failed to cancel reservation' })
+      }
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+  }
+
+  const handleSubmitTestimonial = async () => {
+    const content = testimonialForm.content.trim()
+    if (!content) {
+      pushToast({ type: 'warning', title: 'Testimonial content is required' })
+      return
+    }
+    try {
+      const res = await fetch('/api/testimonials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ content, rating: testimonialForm.rating })
+      })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        setTestimonialForm({ content: '', rating: 5 })
+        pushToast({ type: 'success', title: 'Testimonial submitted' })
+        fetchMyTestimonials()
+      } else {
+        pushToast({ type: 'error', title: data?.error || 'Failed to submit testimonial' })
+      }
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+  }
+
+  const handleDeleteTestimonial = async (testimonialId) => {
+    try {
+      const res = await fetch(`/api/testimonials/${testimonialId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getToken()}` }
+      })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        pushToast({ type: 'success', title: 'Testimonial deleted' })
+        fetchMyTestimonials()
+      } else {
+        pushToast({ type: 'error', title: data?.error || 'Failed to delete testimonial' })
+      }
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+  }
+
+  const handleEditTestimonial = async (item) => {
+    if (item.status !== 'pending') return
+    const nextContent = prompt('Update testimonial content:', item.content || '')
+    if (nextContent === null) return
+    const trimmed = nextContent.trim()
+    if (!trimmed) {
+      pushToast({ type: 'warning', title: 'Content is required' })
+      return
+    }
+    try {
+      const res = await fetch(`/api/testimonials/${item.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ content: trimmed, rating: item.rating || 5 })
+      })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        pushToast({ type: 'success', title: 'Testimonial updated' })
+        fetchMyTestimonials()
+      } else {
+        pushToast({ type: 'error', title: data?.error || 'Failed to update testimonial' })
+      }
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+  }
+
+  const setTablePage = useCallback((tableKey, nextPage) => {
+    setTablePages((prev) => ({ ...prev, [tableKey]: nextPage }))
+  }, [])
+
   if (loading) {
     return (
       <div className="app-theme-shell w-full min-h-screen flex items-center justify-center">
@@ -392,10 +654,35 @@ export default function StudentDashboard() {
   const remainingSessions = user?.remaining_sessions ?? 30
   const sessionPercent = Math.min(100, (remainingSessions / 30) * 100)
   const sessionColor = remainingSessions > 15 ? '#22c55e' : remainingSessions > 5 ? '#f59e0b' : '#ef4444'
+  const historyDurations = history
+    .map(record => Number(record.duration_minutes))
+    .filter(minutes => Number.isFinite(minutes) && minutes >= 0)
+  const totalSessionMinutes = historyDurations.reduce((sum, minutes) => sum + minutes, 0)
+  const totalSitInHours = (totalSessionMinutes / 60).toFixed(1)
+  const averageSessionMinutes = historyDurations.length
+    ? Math.round(totalSessionMinutes / historyDurations.length)
+    : 0
+  const longestSessionMinutes = historyDurations.length
+    ? Math.max(...historyDurations)
+    : 0
+
+  const formatMinutes = (minutes) => {
+    if (!Number.isFinite(minutes) || minutes <= 0) return '0m'
+    return minutes >= 60
+      ? `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+      : `${minutes}m`
+  }
+  const historyPage = paginateItems(history, tablePages.history, TABLE_PAGE_SIZE)
+  const myReservationsPage = paginateItems(myReservations, tablePages.myReservations, TABLE_PAGE_SIZE)
+  const myTestimonialsPage = paginateItems(myTestimonials, tablePages.myTestimonials, TABLE_PAGE_SIZE)
+  const rewardTransactionsPage = paginateItems(rewardsSummary.transactions || [], tablePages.rewardTransactions, TABLE_PAGE_SIZE)
 
   const tabs = [
     { key: 'dashboard', label: 'Overview', icon: <User size={15} /> },
     { key: 'history', label: 'Sit-In History', icon: <History size={15} /> },
+    { key: 'reservation', label: 'Reservation', icon: <CalendarDays size={15} /> },
+    { key: 'testimonials', label: 'Testimonials', icon: <MessageSquare size={15} /> },
+    { key: 'rewards', label: 'Rewards', icon: <Trophy size={15} /> },
     { key: 'settings', label: 'Settings', icon: <User size={15} /> },
   ]
 
@@ -737,7 +1024,7 @@ export default function StudentDashboard() {
               <div>
                 <h2 className="text-2xl font-bold">Sit-In History</h2>
                 <p className="text-sm text-gray-400 mt-1">
-                  {history.length} session{history.length !== 1 ? 's' : ''} recorded
+                  {historyPage.totalItems} session{historyPage.totalItems !== 1 ? 's' : ''} recorded
                 </p>
               </div>
               <button
@@ -748,6 +1035,44 @@ export default function StudentDashboard() {
               </button>
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <div className="relative overflow-hidden rounded-3xl border border-[rgba(125,161,255,0.2)] bg-[linear-gradient(180deg,rgba(11,24,52,0.95)_0%,rgba(9,19,43,0.95)_100%)] p-6">
+                <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full border border-[rgba(125,161,255,0.08)]" />
+                <div className="w-12 h-12 rounded-2xl bg-[rgba(125,161,255,0.12)] border border-[rgba(125,161,255,0.2)] flex items-center justify-center text-blue-300 mb-5">
+                  <Clock size={20} />
+                </div>
+                <div className="text-4xl font-black text-white leading-none">{totalSitInHours}h</div>
+                <p className="text-[11px] font-bold tracking-[0.18em] text-gray-400 mt-3 uppercase">Total Sit-In Hours</p>
+              </div>
+
+              <div className="relative overflow-hidden rounded-3xl border border-[rgba(125,161,255,0.2)] bg-[linear-gradient(180deg,rgba(11,24,52,0.95)_0%,rgba(9,19,43,0.95)_100%)] p-6">
+                <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full border border-[rgba(125,161,255,0.08)]" />
+                <div className="w-12 h-12 rounded-2xl bg-[rgba(125,161,255,0.12)] border border-[rgba(125,161,255,0.2)] flex items-center justify-center text-blue-300 mb-5">
+                  <History size={20} />
+                </div>
+                <div className="text-4xl font-black text-white leading-none">{history.length}</div>
+                <p className="text-[11px] font-bold tracking-[0.18em] text-gray-400 mt-3 uppercase">Number of Sessions</p>
+              </div>
+
+              <div className="relative overflow-hidden rounded-3xl border border-[rgba(125,161,255,0.2)] bg-[linear-gradient(180deg,rgba(11,24,52,0.95)_0%,rgba(9,19,43,0.95)_100%)] p-6">
+                <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full border border-[rgba(125,161,255,0.08)]" />
+                <div className="w-12 h-12 rounded-2xl bg-[rgba(125,161,255,0.12)] border border-[rgba(125,161,255,0.2)] flex items-center justify-center text-blue-300 mb-5">
+                  <BookMarked size={20} />
+                </div>
+                <div className="text-4xl font-black text-white leading-none">{formatMinutes(averageSessionMinutes)}</div>
+                <p className="text-[11px] font-bold tracking-[0.18em] text-gray-400 mt-3 uppercase">Average Session Duration</p>
+              </div>
+
+              <div className="relative overflow-hidden rounded-3xl border border-[rgba(125,161,255,0.2)] bg-[linear-gradient(180deg,rgba(11,24,52,0.95)_0%,rgba(9,19,43,0.95)_100%)] p-6">
+                <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full border border-[rgba(125,161,255,0.08)]" />
+                <div className="w-12 h-12 rounded-2xl bg-[rgba(125,161,255,0.12)] border border-[rgba(125,161,255,0.2)] flex items-center justify-center text-blue-300 mb-5">
+                  <Zap size={20} />
+                </div>
+                <div className="text-4xl font-black text-white leading-none">{formatMinutes(longestSessionMinutes)}</div>
+                <p className="text-[11px] font-bold tracking-[0.18em] text-gray-400 mt-3 uppercase">Longest Session</p>
+              </div>
+            </div>
+
             {historyLoading ? (
               <div className="bento-card flex items-center justify-center py-16">
                 <div className="text-center text-gray-500">
@@ -755,7 +1080,7 @@ export default function StudentDashboard() {
                   <p className="text-sm">Loading history...</p>
                 </div>
               </div>
-            ) : history.length === 0 ? (
+            ) : historyPage.totalItems === 0 ? (
               <div className="bento-card flex flex-col items-center justify-center py-16 text-gray-500">
                 <History size={48} className="mb-4 opacity-20" />
                 <p className="font-semibold">No sit-in history yet</p>
@@ -779,7 +1104,7 @@ export default function StudentDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {history.map((record, idx) => {
+                      {historyPage.items.map((record, idx) => {
                         const startDate = record.started_at ? new Date(record.started_at) : null
                         const endDate = record.ended_at ? new Date(record.ended_at) : null
                         const dateLabel = endDate
@@ -804,9 +1129,9 @@ export default function StudentDashboard() {
                             className="history-row border-b border-[rgba(255,255,255,0.03)]"
                           >
                             {/* # */}
-                            <td className="px-6 py-4 text-xs font-bold text-gray-600">
-                              {history.length - idx}
-                            </td>
+                              <td className="px-6 py-4 text-xs font-bold text-gray-600">
+                              {historyPage.totalItems - (historyPage.startIndex + idx)}
+                              </td>
 
                             {/* Lab */}
                             <td className="px-6 py-4">
@@ -894,29 +1219,17 @@ export default function StudentDashboard() {
                 {/* Summary footer */}
                 <div className="flex items-center justify-between px-6 py-4 border-t border-[rgba(255,255,255,0.05)] bg-[rgba(0,0,0,0.15)]">
                   <p className="text-xs text-gray-500">
-                    Showing <span className="font-bold text-gray-300">{history.length}</span> session{history.length !== 1 ? 's' : ''}
+                    Showing <span className="font-bold text-gray-300">{historyPage.totalItems}</span> session{historyPage.totalItems !== 1 ? 's' : ''}
                   </p>
-                  <div className="flex items-center gap-4 text-xs text-gray-500">
-                    <span>
-                      Total duration: <span className="font-bold text-emerald-400">
-                        {(() => {
-                          const total = history.reduce((sum, r) => sum + (r.duration_minutes || 0), 0)
-                          return total >= 60 ? `${Math.floor(total / 60)}h ${total % 60}m` : `${total} min`
-                        })()}
-                      </span>
-                    </span>
-                    <span>
-                      Avg duration: <span className="font-bold text-purple-400">
-                        {(() => {
-                          const withDuration = history.filter(r => r.duration_minutes != null)
-                          if (withDuration.length === 0) return '—'
-                          const avg = Math.round(withDuration.reduce((s, r) => s + r.duration_minutes, 0) / withDuration.length)
-                          return avg >= 60 ? `${Math.floor(avg / 60)}h ${avg % 60}m` : `${avg} min`
-                        })()}
-                      </span>
-                    </span>
-                  </div>
+                  <p className="text-xs text-gray-500">Completed session records</p>
                 </div>
+                <TablePagination
+                  page={historyPage.currentPage}
+                  totalPages={historyPage.totalPages}
+                  totalItems={historyPage.totalItems}
+                  pageSize={TABLE_PAGE_SIZE}
+                  onPageChange={(nextPage) => setTablePage('history', nextPage)}
+                />
               </div>
             )}
           </div>
@@ -924,6 +1237,392 @@ export default function StudentDashboard() {
 
 
 
+
+        {/* ══════ RESERVATION TAB ══════ */}
+        {activeTab === 'reservation' && (
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-bold">Laboratory Reservation</h2>
+                <p className="text-sm text-gray-400">Reserve an available workstation by lab and time slot.</p>
+              </div>
+              <button
+                onClick={() => handleReservationToggle(!reservationEnabled)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold border transition ${
+                  reservationEnabled
+                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                    : 'bg-red-500/15 border-red-500/40 text-red-400'
+                }`}
+              >
+                {reservationEnabled ? 'Disable Reservation' : 'Enable Reservation'}
+              </button>
+            </div>
+
+            {!reservationEnabled ? (
+              <div className="bento-card text-center py-16 text-gray-500">
+                <CalendarDays size={48} className="mx-auto mb-4 opacity-30" />
+                <p className="font-semibold">Reservation is currently disabled</p>
+                <p className="text-sm text-gray-600 mt-1">Enable reservation to book a laboratory computer.</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                  <select
+                    value={selectedLabId}
+                    onChange={(e) => setSelectedLabId(e.target.value)}
+                    className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500/50"
+                  >
+                    {labs.map((lab) => (
+                      <option key={lab.id} value={lab.id} className="bg-[#0d0d1f]">{lab.lab_name}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500/50"
+                  />
+                  <select
+                    value={selectedTimeSlot}
+                    onChange={(e) => setSelectedTimeSlot(e.target.value)}
+                    className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500/50"
+                  >
+                    {['08:00-10:00', '10:00-12:00', '13:00-15:00', '15:00-17:00'].map((slot) => (
+                      <option key={slot} value={slot} className="bg-[#0d0d1f]">{slot}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={reservationPurpose}
+                    onChange={(e) => setReservationPurpose(e.target.value)}
+                    placeholder="Purpose (optional)"
+                    className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+                  />
+                </div>
+
+                <div className="bento-card">
+                  <div className="flex items-center justify-between mb-5">
+                    <div>
+                      <h3 className="font-bold text-lg">Computer Availability</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">Select an available PC to reserve</p>
+                    </div>
+                    <button
+                      onClick={fetchLabComputers}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/5 hover:bg-white/10 border border-white/10 transition"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+
+                  {/* Legend + Summary */}
+                  {(() => {
+                    const availCount = labComputers.filter(c => c.display_status === 'available').length;
+                    const mineCount = labComputers.filter(c => c.display_status === 'mine' || c.display_status === 'approved').length;
+                    const reservedCount = labComputers.filter(c => c.display_status === 'reserved').length;
+                    const offlineCount = labComputers.filter(c => c.display_status === 'maintenance').length;
+                    return (
+                      <div className="flex flex-wrap gap-2 mb-5">
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/8 border border-emerald-500/20">
+                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)] animate-pulse" />
+                          <span className="text-[11px] font-bold text-emerald-400">{availCount} Available</span>
+                        </div>
+                        {mineCount > 0 && (
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20">
+                            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.5)]" />
+                            <span className="text-[11px] font-bold text-amber-400">{mineCount} Your Reservation</span>
+                          </div>
+                        )}
+                        {reservedCount > 0 && (
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/8 border border-red-500/20">
+                            <div className="w-2.5 h-2.5 rounded-full bg-red-400 shadow-[0_0_6px_rgba(239,68,68,0.5)]" />
+                            <span className="text-[11px] font-bold text-red-400">{reservedCount} Taken</span>
+                          </div>
+                        )}
+                        {offlineCount > 0 && (
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-500/8 border border-gray-500/20">
+                            <div className="w-2.5 h-2.5 rounded-full bg-gray-500" />
+                            <span className="text-[11px] font-bold text-gray-500">{offlineCount} Offline</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 gap-2.5">
+                    {labComputers.map((computer) => {
+                      const isAvailable = computer.display_status === 'available';
+                      const isMine = computer.display_status === 'mine' || computer.display_status === 'approved';
+                      const isReserved = computer.display_status === 'reserved';
+                      const isMaintenance = computer.display_status === 'maintenance';
+                      const clickable = isAvailable;
+                      return (
+                        <button
+                          key={computer.id}
+                          onClick={() => clickable && handleCreateReservation(computer)}
+                          disabled={!clickable}
+                          className={`group relative rounded-xl text-xs border-2 transition-all duration-200 flex flex-col items-center justify-center gap-1 min-h-[68px] ${
+                            isAvailable
+                              ? 'bg-gradient-to-b from-emerald-500/15 to-emerald-900/10 border-emerald-500/40 text-emerald-300 hover:border-emerald-400/70 hover:shadow-[0_0_18px_rgba(52,211,153,0.2)] hover:scale-[1.06] cursor-pointer'
+                              : isMine
+                                ? 'bg-gradient-to-b from-amber-500/15 to-amber-900/15 border-amber-500/50 text-amber-300 cursor-default'
+                                : isReserved
+                                  ? 'bg-gradient-to-b from-red-500/10 to-red-900/10 border-red-500/35 text-red-400/80 cursor-not-allowed opacity-75'
+                                  : 'bg-gradient-to-b from-gray-800/60 to-gray-900/60 border-gray-600/30 text-gray-500 cursor-not-allowed opacity-60'
+                          }`}
+                          title={`PC ${computer.computer_number} — ${
+                            isAvailable ? 'Available – click to reserve' 
+                            : isMine ? 'Your reservation' 
+                            : isReserved ? 'Reserved by another student' 
+                            : 'Under maintenance'
+                          }`}
+                        >
+                          {/* Status indicator dot */}
+                          <div className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${
+                            isAvailable ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)] animate-pulse'
+                            : isMine ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]'
+                            : isReserved ? 'bg-red-400/80'
+                            : 'bg-gray-600'
+                          }`} />
+
+                          {/* Icon */}
+                          <div className={`text-sm ${isMaintenance ? 'opacity-40' : ''}`}>
+                            {isAvailable ? '🖥️' : isMine ? '⭐' : isReserved ? '🔒' : '🔧'}
+                          </div>
+
+                          <span className="font-bold text-[11px] leading-none">PC {computer.computer_number}</span>
+
+                          {/* Sub-label */}
+                          {isMine && (
+                            <span className="text-[9px] leading-tight text-amber-300/80 font-medium">Yours</span>
+                          )}
+                          {isMaintenance && (
+                            <span className="text-[9px] leading-tight text-gray-500 font-medium">Offline</span>
+                          )}
+                        </button>
+                      )
+                    })}
+                    {labComputers.length === 0 && (
+                      <div className="col-span-full text-center text-sm text-gray-500 py-6">
+                        {!selectedLabId ? 'Select a laboratory first.' : 'No computers available for this selection.'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bento-card p-0 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)]">
+                    <h3 className="font-bold">My Reservations</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                          {['Lab', 'PC', 'Date', 'Slot', 'Status', 'Notes', 'Action'].map((h) => (
+                            <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4 whitespace-nowrap">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {myReservationsPage.totalItems === 0 ? (
+                          <tr><td colSpan={7} className="text-center text-gray-600 py-8 text-sm">No reservations yet</td></tr>
+                        ) : myReservationsPage.items.map((item) => (
+                          <tr key={item.id} className="border-b border-[rgba(255,255,255,0.03)]">
+                            <td className="px-6 py-4 text-sm">{item.lab_name}</td>
+                            <td className="px-6 py-4 text-sm">PC {item.computer_number}</td>
+                            <td className="px-6 py-4 text-sm text-gray-400">{item.date}</td>
+                            <td className="px-6 py-4 text-sm text-gray-400">{item.time_slot}</td>
+                            <td className="px-6 py-4">
+                              <span className="px-2 py-1 rounded text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40 uppercase">
+                                {item.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-gray-400">{item.admin_notes || '—'}</td>
+                            <td className="px-6 py-4">
+                              {['pending', 'approved'].includes(item.status) ? (
+                                <button
+                                  onClick={() => handleCancelReservation(item.id)}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/15 border border-red-500/40 text-red-300 hover:bg-red-500/25 transition"
+                                >
+                                  Cancel
+                                </button>
+                              ) : <span className="text-xs text-gray-600">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <TablePagination
+                    page={myReservationsPage.currentPage}
+                    totalPages={myReservationsPage.totalPages}
+                    totalItems={myReservationsPage.totalItems}
+                    pageSize={TABLE_PAGE_SIZE}
+                    onPageChange={(nextPage) => setTablePage('myReservations', nextPage)}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ══════ TESTIMONIALS TAB ══════ */}
+        {activeTab === 'testimonials' && (
+          <div className="flex flex-col gap-6">
+            <div>
+              <h2 className="text-2xl font-bold">Testimonials</h2>
+              <p className="text-sm text-gray-400 mt-1">Share your sit-in experience and track approval status.</p>
+            </div>
+
+            <div className="bento-card">
+              <h3 className="font-bold mb-4">Submit New Testimonial</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-2">Rating</label>
+                  <StarRating value={testimonialForm.rating} onChange={(rating) => setTestimonialForm((prev) => ({ ...prev, rating }))} />
+                </div>
+                <textarea
+                  rows={4}
+                  value={testimonialForm.content}
+                  onChange={(e) => setTestimonialForm((prev) => ({ ...prev, content: e.target.value }))}
+                  placeholder="Write your experience..."
+                  className="w-full bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/50 resize-none"
+                />
+                <button
+                  onClick={handleSubmitTestimonial}
+                  className="px-5 py-2.5 rounded-xl text-sm font-bold bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:opacity-90 transition"
+                >
+                  Submit Testimonial
+                </button>
+              </div>
+            </div>
+
+            <div className="bento-card p-0 overflow-hidden">
+              <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)]">
+                <h3 className="font-bold">My Testimonials</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                      {['Date', 'Rating', 'Content', 'Status', 'Action'].map((h) => (
+                        <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {myTestimonialsPage.totalItems === 0 ? (
+                      <tr><td colSpan={5} className="text-center text-gray-600 py-8 text-sm">No testimonials yet</td></tr>
+                    ) : myTestimonialsPage.items.map((item) => (
+                      <tr key={item.id} className="border-b border-[rgba(255,255,255,0.03)]">
+                        <td className="px-6 py-4 text-xs text-gray-500">{new Date(item.created_at).toLocaleDateString()}</td>
+                        <td className="px-6 py-4"><StarRating value={item.rating || 0} readonly /></td>
+                        <td className="px-6 py-4 text-sm text-gray-300">{item.content}</td>
+                        <td className="px-6 py-4">
+                          <span className="px-2 py-1 rounded text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 uppercase">
+                            {item.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            {item.status === 'pending' && (
+                              <button
+                                onClick={() => handleEditTestimonial(item)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-500/15 border border-blue-500/40 text-blue-300 hover:bg-blue-500/25 transition"
+                              >
+                                Edit
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteTestimonial(item.id)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/15 border border-red-500/40 text-red-300 hover:bg-red-500/25 transition"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <TablePagination
+                page={myTestimonialsPage.currentPage}
+                totalPages={myTestimonialsPage.totalPages}
+                totalItems={myTestimonialsPage.totalItems}
+                pageSize={TABLE_PAGE_SIZE}
+                onPageChange={(nextPage) => setTablePage('myTestimonials', nextPage)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ══════ REWARDS TAB ══════ */}
+        {activeTab === 'rewards' && (
+          <div className="flex flex-col gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="bento-card bg-gradient-to-br from-amber-500/15 to-yellow-500/5 border-amber-500/20">
+                <div className="flex items-center gap-3 mb-3">
+                  <Award className="text-amber-400" size={20} />
+                  <h3 className="font-bold">Current Points</h3>
+                </div>
+                <div className="text-4xl font-black text-amber-300">{rewardsSummary.points || 0}</div>
+              </div>
+              <div className="bento-card lg:col-span-2">
+                <h3 className="font-bold mb-3">Leaderboard (Top 10)</h3>
+                <div className="space-y-2 max-h-56 overflow-y-auto">
+                  {leaderboard.map((row, idx) => (
+                    <div key={row.id} className="flex items-center justify-between p-2.5 rounded-lg bg-black/20 border border-[rgba(255,255,255,0.04)]">
+                      <div className="text-sm">
+                        <span className="text-gray-500 mr-2">#{idx + 1}</span>
+                        <span className="font-semibold">{row.full_name}</span>
+                      </div>
+                      <div className="text-amber-300 font-bold">{row.reward_points} pts</div>
+                    </div>
+                  ))}
+                  {leaderboard.length === 0 && <div className="text-sm text-gray-600">No leaderboard data yet.</div>}
+                </div>
+              </div>
+            </div>
+
+            <div className="bento-card p-0 overflow-hidden">
+              <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)]">
+                <h3 className="font-bold">Recent Transactions</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[rgba(255,255,255,0.05)]">
+                      {['Date', 'Delta', 'Reason', 'Source'].map((h) => (
+                        <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rewardTransactionsPage.totalItems === 0 ? (
+                      <tr><td colSpan={4} className="text-center text-gray-600 py-8 text-sm">No transactions yet</td></tr>
+                    ) : rewardTransactionsPage.items.map((tx) => (
+                      <tr key={tx.id} className="border-b border-[rgba(255,255,255,0.03)]">
+                        <td className="px-6 py-4 text-xs text-gray-500">{new Date(tx.created_at).toLocaleString()}</td>
+                        <td className={`px-6 py-4 text-sm font-bold ${tx.delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {tx.delta >= 0 ? `+${tx.delta}` : tx.delta}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-300">{tx.reason || '—'}</td>
+                        <td className="px-6 py-4 text-xs text-gray-500 uppercase">{tx.source || 'admin'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <TablePagination
+                page={rewardTransactionsPage.currentPage}
+                totalPages={rewardTransactionsPage.totalPages}
+                totalItems={rewardTransactionsPage.totalItems}
+                pageSize={TABLE_PAGE_SIZE}
+                onPageChange={(nextPage) => setTablePage('rewardTransactions', nextPage)}
+              />
+            </div>
+          </div>
+        )}
 
         {/* ══════ SETTINGS TAB ══════ */}
         {activeTab === 'settings' && (
@@ -1091,6 +1790,69 @@ export default function StudentDashboard() {
               </button>
               <button
                 onClick={() => setFeedbackModal(null)}
+                className="px-5 py-3 rounded-xl text-sm font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-white transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── RESERVATION CONFIRMATION MODAL ── */}
+      {confirmReservationModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-[#0d0d1f] border border-[rgba(255,255,255,0.08)] rounded-2xl w-full max-w-md shadow-2xl p-7">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold">Confirm Reservation</h3>
+              <button onClick={() => setConfirmReservationModal(null)} className="p-1.5 rounded-lg hover:bg-white/5 text-gray-500">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Reservation details */}
+            <div className="space-y-4 mb-6">
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-black/30 border border-[rgba(255,255,255,0.04)]">
+                <Monitor size={20} className="text-emerald-400 shrink-0" />
+                <div>
+                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Laboratory</div>
+                  <div className="font-semibold">{confirmReservationModal.labName}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-black/30 border border-[rgba(255,255,255,0.04)]">
+                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Computer</div>
+                  <div className="text-lg font-bold text-purple-300">PC {confirmReservationModal.computer.computer_number}</div>
+                </div>
+                <div className="p-4 rounded-xl bg-black/30 border border-[rgba(255,255,255,0.04)]">
+                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Time Slot</div>
+                  <div className="text-sm font-semibold">{selectedTimeSlot}</div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-black/30 border border-[rgba(255,255,255,0.04)]">
+                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Date</div>
+                <div className="text-sm font-semibold">{new Date(confirmReservationModal.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+              </div>
+
+              {reservationPurpose && (
+                <div className="p-4 rounded-xl bg-black/30 border border-[rgba(255,255,255,0.04)]">
+                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Purpose</div>
+                  <div className="text-sm text-gray-300">{reservationPurpose}</div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleConfirmReservation}
+                className="flex-1 py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-emerald-500 to-green-500 text-white hover:opacity-90 transition"
+              >
+                ✓ Confirm Reservation
+              </button>
+              <button
+                onClick={() => setConfirmReservationModal(null)}
                 className="px-5 py-3 rounded-xl text-sm font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-white transition"
               >
                 Cancel

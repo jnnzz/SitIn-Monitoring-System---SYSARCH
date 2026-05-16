@@ -73,7 +73,7 @@ export async function GET(request, { params }) {
 
     try {
       const result = await pool.query(
-        'SELECT id, student_id, full_name, email, role, course, year_level, address, remaining_sessions, status, avatar_url, created_at FROM users WHERE id = $1',
+        'SELECT id, student_id, full_name, email, role, course, year_level, address, remaining_sessions, status, reservation_enabled, avatar_url, created_at FROM users WHERE id = $1',
         [auth.user.userId]
       )
 
@@ -240,7 +240,7 @@ export async function POST(request, { params }) {
       }
 
       const result = await pool.query(
-        'SELECT id, student_id, full_name, email, password_hash, role, course, year_level, address, remaining_sessions, status, avatar_url FROM users WHERE student_id = $1',
+        'SELECT id, student_id, full_name, email, password_hash, role, course, year_level, address, remaining_sessions, status, reservation_enabled, avatar_url FROM users WHERE student_id = $1',
         [student_id]
       )
 
@@ -270,10 +270,11 @@ export async function POST(request, { params }) {
           role: user.role,
           course: user.course,
           year_level: user.year_level,
-          address: user.address,
-          remaining_sessions: user.remaining_sessions || 0,
-          status: user.status || 'active',
-          avatar_url: normalizeAvatarUrl(user.avatar_url, request),
+            address: user.address,
+            remaining_sessions: user.remaining_sessions || 0,
+            status: user.status || 'active',
+            reservation_enabled: Boolean(user.reservation_enabled),
+            avatar_url: normalizeAvatarUrl(user.avatar_url, request),
         },
         token,
       })

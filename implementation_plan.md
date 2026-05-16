@@ -12,378 +12,484 @@ A Next.js frontend + Express/PostgreSQL backend system for the University of Ceb
 
 | Module | Dashboard | Frontend | Backend | Notes |
 |--------|-----------|----------|---------|-------|
+| Login / Register | Both | ✅ | ✅ | JWT auth with bcrypt, `/api/auth/register` + `/api/auth/login` |
 | Edit Profile | Student | ✅ | ✅ | Full CRUD via `/api/auth/profile` |
 | Avatar Upload | Student | ✅ | ✅ | Multer-based upload to `/uploads/` |
-| Lab Rules & Regulations | Student | ✅ | N/A | Static content, no backend needed |
-| View Announcements (UI only) | Student | ✅ | ⚠️ | Fetches from `/api/auth/announcements` but backend stores in-memory (lost on restart) |
+| Lab Rules & Regulations | Student | ✅ | N/A | Static content on dashboard tab |
+| View Announcements | Student | ✅ | ✅ | Fetches from `/api/auth/announcements` |
+| Notification System | Student | ✅ | ✅ | Bell icon, unread count, mark-read, poll every 30s. Backend: `routes/notification.js` with full CRUD + DB table |
+| Remaining Sessions Counter | Student | ✅ | ✅ | Circular ring widget on dashboard, reads `user.remaining_sessions` |
+| Sit-In History + Feedback | Student | ✅ | ✅ | History tab with table, feedback modal (1-5 star + text), `/api/sitin/my/history` + `/api/sitin/my/feedback/:recordId` |
 | Search Student | Admin | ✅ | ✅ | `/api/sitin/students/search` |
-| Start Sit-In Session | Admin | ✅ | ✅ | `/api/sitin/sessions/start` |
-| Student Info List | Admin | ✅ | ✅ | `/api/auth/admin/users` |
+| Start Sit-In Session | Admin | ✅ | ✅ | `/api/sitin/sessions/start` with lab/purpose form |
+| End Sit-In Session | Admin | ✅ | ✅ | `/api/sitin/sessions/end/:id` with duration calc |
+| Student Info List | Admin | ✅ | ✅ | `/api/auth/admin/users` with delete |
 | View Current Sit-In | Admin | ✅ | ✅ | `/api/sitin/sessions/active` |
 | View Sit-In Records | Admin | ✅ | ✅ | `/api/sitin/sessions/records` |
-| Create Announcement (UI only) | Admin | ✅ | ⚠️ | In-memory array, no DB persistence |
-| Login / Register | Both | ✅ | ✅ | JWT auth with bcrypt |
+| Create/Delete Announcements | Admin | ✅ | ✅ | `/api/auth/admin/announcements` CRUD |
+| Admin Dashboard Stats | Admin | ✅ | ✅ | Charts (bar + donut), stat cards, recent registrations |
+| Admin Settings / Profile Edit | Admin | ✅ | ✅ | Settings tab with profile form |
+
+### 🟡 Partially Implemented (Backend Only)
+
+| Module | Dashboard | Frontend | Backend | Notes |
+|--------|-----------|----------|---------|-------|
+| Generate Reports (CSV/PDF) | Admin | ❌ | ✅ | CSV export routes implemented; PDF pending |
+| Analytics Dashboard | Admin | ❌ | ✅ | Analytics endpoints implemented |
+| View Reward Points | Student | ❌ | ✅ | Rewards summary endpoints implemented |
+| Add Reward Points / Leaderboard | Admin | ❌ | ✅ | Rewards admin endpoints implemented |
 
 ### 🔴 Not Yet Implemented
 
 | Module | Dashboard | Priority |
 |--------|-----------|----------|
-| View Remaining Sessions | Student | High |
-| View Sit-In History / Feedback | Student | High |
-| Announcement Backend Persistence | Both | High |
-| Notification / Alert System | Student | Medium |
-| Reservation System | Both | High |
-| View Reward Points | Student | Medium |
-| Generate Reports (CSV/PDF) | Admin | Medium |
-| Analytics Dashboard | Admin | Medium |
-| Add Reward Points | Admin | Medium |
-| Leaderboard | Admin | Medium |
+| **Reservation System (Student)** | Student | 🔴 High |
+| **Testimonials (Student)** | Student | 🔴 High |
+| **Reservation Management (Admin)** | Admin | 🔴 High |
+| **Testimonials View (Admin)** | Admin | 🔴 High |
+
+---  
+
+## Proposed Changes — New Features
+
+### Feature 1: Student Reservation System
+
+> Students can enable/disable their reservation capability. When enabled, they can browse labs, pick available PCs, and submit reservation requests. When disabled, the reservation tab shows a CTA to enable it.
 
 ---
 
-## Proposed Changes
+### Feature 2: Student Testimonials
 
-### Phase 1 — Database Schema Additions
+> Students can submit testimonials about their sit-in experience. These are public-facing reviews visible to admin and optionally on a landing page.
 
-> [!IMPORTANT]
-> All new tables & columns should be added via auto-migration in the backend startup (same pattern currently used in `sitin.js`).
+---
 
-#### [MODIFY] [database.sql](file:///c:/Download/SitIn-Monitoring/SitIn-Monitoring-System---SYSARCH/backend/database.sql)
+### Feature 3: Admin Reservation Management
 
-Add the following new tables and columns:
+> Admin can view all reservation requests, see logs of past reservations, control which PCs are available/unavailable per lab, and accept or decline student reservation requests.
+
+---
+
+### Feature 4: Admin Testimonials View
+
+> Admin can view all student testimonials, approve/reject them for public display, and delete inappropriate ones.
+
+---
+
+### Feature 5: Reports (Admin)
+
+> Admin can generate CSV/PDF exports for sit-in sessions, reservations, testimonials, and users with date-range and lab/status filters.
+
+---
+
+### Feature 6: Analytics Dashboard (Admin)
+
+> Admin can view trend charts and KPIs for usage, lab utilization, reservation conversion, and peak hours.
+
+---
+
+### Feature 7: Reward Points (Student + Admin)
+
+> Students can view their points and history; admins can adjust points and view a leaderboard.
+
+---
+
+### Feature 8: Laboratory Software Availability Management (Admin)
+
+> Admin can add software applications and configure availability per laboratory room so each lab clearly shows which software is installed/usable.
+
+---
+
+## Phase 1 — Database Schema Additions
+
+All new tables & columns should be added via auto-migration in the backend startup (same pattern currently used in `sitin.js` and `notification.js`).
+
+### New Tables
 
 ```sql
--- 1. Announcements table (replace in-memory array)
-CREATE TABLE IF NOT EXISTS announcements (
-  id SERIAL PRIMARY KEY,
-  title VARCHAR(255) NOT NULL,
-  content TEXT NOT NULL,
-  type VARCHAR(50) DEFAULT 'info',       -- 'info' | 'important' | 'success'
-  created_by INTEGER REFERENCES users(id),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 2. Feedback table (student rates their sit-in after session ends)
-ALTER TABLE sit_in_records ADD COLUMN IF NOT EXISTS feedback TEXT;
-ALTER TABLE sit_in_records ADD COLUMN IF NOT EXISTS rating INTEGER;  -- 1-5 stars
-
--- 3. Reservation system
+-- 1. Labs table
 CREATE TABLE IF NOT EXISTS labs (
   id SERIAL PRIMARY KEY,
   lab_name VARCHAR(100) UNIQUE NOT NULL,
-  total_computers INTEGER DEFAULT 40
+  total_computers INTEGER DEFAULT 40,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 2. Lab Computers — individual PC availability control
+CREATE TABLE IF NOT EXISTS lab_computers (
+  id SERIAL PRIMARY KEY,
+  lab_id INTEGER NOT NULL REFERENCES labs(id) ON DELETE CASCADE,
+  computer_number INTEGER NOT NULL,
+  is_available BOOLEAN DEFAULT TRUE,           -- admin can toggle on/off
+  status VARCHAR(20) DEFAULT 'available',      -- 'available' | 'reserved' | 'in-use' | 'maintenance'
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(lab_id, computer_number)
+);
+
+-- 3. Reservations — student booking requests
 CREATE TABLE IF NOT EXISTS reservations (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   lab_id INTEGER NOT NULL REFERENCES labs(id),
-  computer_number INTEGER NOT NULL,
+  computer_id INTEGER NOT NULL REFERENCES lab_computers(id),
   date DATE NOT NULL,
-  time_slot VARCHAR(50) NOT NULL,        -- e.g. '08:00-10:00'
-  status VARCHAR(20) DEFAULT 'reserved', -- 'reserved' | 'cancelled' | 'completed'
+  time_slot VARCHAR(50) NOT NULL,              -- e.g. '08:00-10:00'
+  purpose VARCHAR(255),
+  status VARCHAR(20) DEFAULT 'pending',        -- 'pending' | 'approved' | 'declined' | 'cancelled' | 'completed'
+  admin_notes TEXT,                             -- reason for decline, etc.
+  reviewed_by INTEGER REFERENCES users(id),    -- admin who reviewed
+  reviewed_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(lab_id, computer_number, date, time_slot)
+  UNIQUE(lab_id, computer_id, date, time_slot) -- prevent double-booking
 );
 
--- 4. Notifications
-CREATE TABLE IF NOT EXISTS notifications (
+-- 4. Reservation Logs — audit trail for all reservation actions
+CREATE TABLE IF NOT EXISTS reservation_logs (
   id SERIAL PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  title VARCHAR(255) NOT NULL,
-  message TEXT,
-  type VARCHAR(50) DEFAULT 'announcement', -- 'announcement' | 'session' | 'reward' | 'reservation'
-  is_read BOOLEAN DEFAULT FALSE,
-  reference_id INTEGER,                     -- optional link to announcement/session ID
+  reservation_id INTEGER NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+  action VARCHAR(50) NOT NULL,                 -- 'created' | 'approved' | 'declined' | 'cancelled' | 'completed'
+  performed_by INTEGER NOT NULL REFERENCES users(id),
+  details TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 5. Reward points
-ALTER TABLE users ADD COLUMN IF NOT EXISTS reward_points INTEGER DEFAULT 0;
+-- 5. Student reservation toggle
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reservation_enabled BOOLEAN DEFAULT FALSE;
 
-CREATE TABLE IF NOT EXISTS reward_history (
+-- 6. Testimonials
+CREATE TABLE IF NOT EXISTS testimonials (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  points INTEGER NOT NULL,
-  reason VARCHAR(255),
-  awarded_by INTEGER REFERENCES users(id),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  content TEXT NOT NULL,
+  rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+  status VARCHAR(20) DEFAULT 'pending',        -- 'pending' | 'approved' | 'rejected'
+  reviewed_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 6. Seed labs
+-- 7. Seed labs
 INSERT INTO labs (lab_name, total_computers) VALUES
   ('Lab 524', 40), ('Lab 526', 40), ('Lab 530', 40),
   ('Lab 542', 40), ('Lab 544', 40)
 ON CONFLICT (lab_name) DO NOTHING;
+
+-- 8. Seed computers for each lab (1-40) — done programmatically in migration code
+
+-- 9. Master list of software applications
+CREATE TABLE IF NOT EXISTS software_applications (
+  id SERIAL PRIMARY KEY,
+  app_name VARCHAR(120) UNIQUE NOT NULL,
+  app_version VARCHAR(50),
+  description TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 10. Lab-software mapping and availability
+CREATE TABLE IF NOT EXISTS lab_software_availability (
+  id SERIAL PRIMARY KEY,
+  lab_id INTEGER NOT NULL REFERENCES labs(id) ON DELETE CASCADE,
+  software_id INTEGER NOT NULL REFERENCES software_applications(id) ON DELETE CASCADE,
+  is_available BOOLEAN DEFAULT TRUE,
+  notes TEXT,
+  updated_by INTEGER REFERENCES users(id),
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (lab_id, software_id)
+);
 ```
 
 ---
 
-### Phase 2 — Backend API Routes
+## Phase 2 — Backend API Routes
 
-#### [NEW] [announcement.js](file:///c:/Download/SitIn-Monitoring/SitIn-Monitoring-System---SYSARCH/backend/routes/announcement.js)
+### Reservation Routes (NEW: `backend/routes/reservation.js`)
 
-Replace the in-memory announcement system with persistent DB storage:
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| `GET` | `/api/announcements` | Student/Admin | List all announcements (newest first) |
-| `POST` | `/api/announcements` | Admin only | Create announcement + auto-create notifications for all students |
-| `DELETE` | `/api/announcements/:id` | Admin only | Delete an announcement |
-
----
-
-#### [NEW] [notification.js](file:///c:/Download/SitIn-Monitoring/SitIn-Monitoring-System---SYSARCH/backend/routes/notification.js)
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| `GET` | `/api/notifications` | Authenticated | Get user's notifications (newest first, limit 50) |
-| `GET` | `/api/notifications/unread-count` | Authenticated | Get count of unread notifications |
-| `PUT` | `/api/notifications/:id/read` | Authenticated | Mark a single notification as read |
-| `PUT` | `/api/notifications/read-all` | Authenticated | Mark all notifications as read |
-
----
-
-#### [NEW] [reservation.js](file:///c:/Download/SitIn-Monitoring/SitIn-Monitoring-System---SYSARCH/backend/routes/reservation.js)
+**Student endpoints:**
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | `GET` | `/api/reservations/labs` | Authenticated | List all labs with computer counts |
-| `GET` | `/api/reservations/lab/:labId/status?date=&time_slot=` | Authenticated | Get availability grid for a lab — returns each computer's status (🟢 available / 🔴 occupied) |
-| `POST` | `/api/reservations` | Student | Reserve a specific computer in a lab/time slot |
-| `DELETE` | `/api/reservations/:id` | Student/Admin | Cancel a reservation |
+| `GET` | `/api/reservations/lab/:labId/computers?date=&time_slot=` | Authenticated | Get availability grid — each computer's status |
+| `POST` | `/api/reservations` | Student | Submit a reservation request (status = `pending`) |
+| `DELETE` | `/api/reservations/:id` | Student | Cancel own reservation (pending/approved only) |
 | `GET` | `/api/reservations/my` | Student | Get student's own reservations |
-| `GET` | `/api/reservations/all` | Admin only | Get all reservations (with filters) |
+| `PUT` | `/api/reservations/toggle` | Student | Enable/disable own reservation capability |
 
----
-
-#### [NEW] [reward.js](file:///c:/Download/SitIn-Monitoring/SitIn-Monitoring-System---SYSARCH/backend/routes/reward.js)
+**Admin endpoints:**
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `GET` | `/api/rewards/my` | Student | Get own points total + history |
-| `POST` | `/api/rewards/add` | Admin only | Award points to a student (body: `{user_id, points, reason}`) |
-| `GET` | `/api/rewards/leaderboard` | Authenticated | Get top 20 students by reward points |
+| `GET` | `/api/reservations/all` | Admin | Get all reservations with filters (status, date, lab) |
+| `PUT` | `/api/reservations/:id/approve` | Admin | Approve a pending reservation |
+| `PUT` | `/api/reservations/:id/decline` | Admin | Decline a reservation (with optional `admin_notes`) |
+| `GET` | `/api/reservations/logs` | Admin | Get reservation audit logs (all actions) |
+| `PUT` | `/api/reservations/computer/:computerId/toggle` | Admin | Toggle a specific PC available/unavailable |
+| `PUT` | `/api/reservations/computer/:computerId/status` | Admin | Set PC status (available/maintenance/in-use) |
+| `GET` | `/api/reservations/lab/:labId/manage` | Admin | Get full PC grid with admin controls |
 
 ---
 
-#### [NEW] [reports.js](file:///c:/Download/SitIn-Monitoring/SitIn-Monitoring-System---SYSARCH/backend/routes/reports.js)
+### Testimonial Routes (NEW: `backend/routes/testimonial.js`)
+
+**Student endpoints:**
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `GET` | `/api/reports/sitin/csv` | Admin only | Export sit-in records as CSV download |
-| `GET` | `/api/reports/sitin/pdf` | Admin only | Export sit-in records as PDF download |
+| `GET` | `/api/testimonials/my` | Student | Get own testimonials |
+| `POST` | `/api/testimonials` | Student | Submit a new testimonial (content + rating) |
+| `PUT` | `/api/testimonials/:id` | Student | Edit own testimonial (pending only) |
+| `DELETE` | `/api/testimonials/:id` | Student | Delete own testimonial |
 
-> [!NOTE]
-> CSV will use the `json2csv` npm package. PDF will use the `pdfkit` npm package. Both generate files on-the-fly and stream to the client.
-
----
-
-#### [NEW] [analytics.js](file:///c:/Download/SitIn-Monitoring/SitIn-Monitoring-System---SYSARCH/backend/routes/analytics.js)
+**Admin endpoints:**
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `GET` | `/api/analytics/summary` | Admin only | Total sit-ins, avg duration, busiest lab, busiest day, etc. |
-| `GET` | `/api/analytics/daily?days=7` | Admin only | Sit-in counts per day for the last N days |
-| `GET` | `/api/analytics/by-lab` | Admin only | Sit-in counts grouped by lab |
-| `GET` | `/api/analytics/by-purpose` | Admin only | Sit-in counts grouped by purpose (language) |
-| `GET` | `/api/analytics/peak-hours` | Admin only | Hourly distribution of sit-ins |
+| `GET` | `/api/testimonials/all` | Admin | Get all testimonials with filters |
+| `PUT` | `/api/testimonials/:id/approve` | Admin | Approve a testimonial for public display |
+| `PUT` | `/api/testimonials/:id/reject` | Admin | Reject a testimonial |
+| `DELETE` | `/api/testimonials/:id` | Admin | Delete any testimonial |
 
 ---
 
-#### [MODIFY] [sitin.js](file:///c:/Download/SitIn-Monitoring/SitIn-Monitoring-System---SYSARCH/backend/routes/sitin.js)
+### Software Availability Routes (NEW: `backend/routes/software.js`)
 
-Add a student-facing endpoint:
+**Admin endpoints:**
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `GET` | `/api/sitin/my/history` | Student | Get the logged-in student's sit-in history from `sit_in_records` |
-| `PUT` | `/api/sitin/my/feedback/:recordId` | Student | Submit feedback/rating for a past session |
+| `GET` | `/api/software` | Admin | List all software applications |
+| `POST` | `/api/software` | Admin | Add software application (`app_name`, version, description) |
+| `PUT` | `/api/software/:id` | Admin | Update software details |
+| `DELETE` | `/api/software/:id` | Admin | Deactivate/remove software |
+| `GET` | `/api/software/labs/:labId` | Admin | Get software availability matrix for one lab |
+| `PUT` | `/api/software/labs/:labId/:softwareId` | Admin | Set software availability per lab with optional notes |
+| `GET` | `/api/software/labs/overview` | Admin | Get cross-lab software availability summary |
 
 ---
 
-#### [MODIFY] [index.js](file:///c:/Download/SitIn-Monitoring/SitIn-Monitoring-System---SYSARCH/backend/index.js)
-
-Register all new route files:
+### Register in `backend/index.js`
 
 ```js
-app.use('/api/announcements', require('./routes/announcement'));
-app.use('/api/notifications', require('./routes/notification'));
 app.use('/api/reservations', require('./routes/reservation'));
-app.use('/api/rewards', require('./routes/reward'));
+app.use('/api/testimonials', require('./routes/testimonial'));
+app.use('/api/software', require('./routes/software'));
+```
+
+---
+
+## Phase 3 — Student Dashboard Frontend (`StudentDashboard.jsx`)
+
+**Current tabs:** `dashboard` (Overview) | `history` (Sit-In History) | `settings`
+
+**Updated tabs:** `dashboard` | `history` | `reservation` | `testimonials` | `settings`
+
+### Tab: Reservation (new)
+
+- **Enable/Disable toggle** at top
+  - Disabled → card with feature description + "Enable Reservation" button
+  - Enabled → full reservation UI
+- **Lab selector** dropdown (Lab 524, 526, 530, 542, 544)
+- **Date picker** + **time slot picker** (fixed: `08:00-10:00`, `10:00-12:00`, `13:00-15:00`, `15:00-17:00`)
+- **Visual PC grid** (5×8 for 40 computers)
+  - 🟢 Green = available → clickable to reserve
+  - 🔴 Red = reserved by someone else
+  - 🟡 Yellow = your pending reservation
+  - ⚫ Gray = maintenance/unavailable
+- **"My Reservations"** section: status badges, cancel button, admin notes on declined
+
+### Tab: Testimonials (new)
+
+- **Submit Testimonial** form (star rating + textarea + submit)
+- **My Testimonials** list with status badges (Pending / Approved / Rejected), edit/delete for pending
+
+---
+
+## Phase 4 — Admin Dashboard Frontend (`Dashboard.jsx`)
+
+**Current tabs:** `dashboard` | `users` | `sitin` | `announcements` | `settings`
+
+**Updated tabs:** `dashboard` | `users` | `sitin` | `announcements` | `reservation` | `testimonials` | `software` | `settings`
+
+### Tab: Reservation (new) — 4 sub-views
+
+**Pending Requests:** Table of pending reservations with Approve/Decline buttons
+
+**PC Management:** Lab selector + visual grid with admin controls (toggle available/maintenance)
+
+**Reservation Logs:** Full audit trail table with filters (date, action type, lab)
+
+**All Reservations:** Table with status filter tabs (All/Pending/Approved/Declined/Cancelled/Completed)
+
+### Tab: Testimonials (new)
+
+- **Pending Review** section (highlighted) with approve/reject buttons
+- **All Testimonials** table with status filter + delete
+
+### Tab: Software (new)
+
+- **Software Master List** with add/edit/deactivate actions
+- **Lab Availability Matrix** (rows: software, columns: labs) with per-cell available/unavailable toggle
+- **Per-lab quick view** to list all available software for the selected laboratory room
+
+---
+
+## Phase 5 - Reports + Analytics + Rewards
+
+**Status:** Backend schema + routes implemented in Express (CSV only). Frontend UI and PDF export are still pending.
+
+### 5a. Database Schema Additions
+
+```sql
+-- 1. Reward points (if not already present)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reward_points INTEGER DEFAULT 0;
+
+-- 2. Reward transactions (audit trail)
+CREATE TABLE IF NOT EXISTS reward_transactions (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  delta INTEGER NOT NULL,
+  reason VARCHAR(255),
+  source VARCHAR(50) DEFAULT 'admin',        -- 'sitin' | 'admin' | 'bonus' | 'adjustment'
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. Report exports (optional audit log)
+CREATE TABLE IF NOT EXISTS report_exports (
+  id SERIAL PRIMARY KEY,
+  report_type VARCHAR(50) NOT NULL,          -- 'sitin' | 'reservations' | 'testimonials' | 'users' | 'labs'
+  format VARCHAR(10) NOT NULL,               -- 'csv' | 'pdf'
+  filters TEXT,
+  file_path TEXT,
+  requested_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 5b. Backend API Routes
+
+**Reports (NEW: `backend/routes/reports.js`)**
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/reports/templates` | Admin | List available report types and filters |
+| `POST` | `/api/reports/generate` | Admin | Generate CSV/PDF by type and filters |
+| `GET` | `/api/reports/history` | Admin | List past exports (if stored) |
+| `GET` | `/api/reports/:id/download` | Admin | Download a stored report file |
+
+**Analytics (NEW: `backend/routes/analytics.js`)**
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/analytics/summary` | Admin | KPIs (sessions, avg duration, reservations) |
+| `GET` | `/api/analytics/sessions` | Admin | Time series of sit-in sessions |
+| `GET` | `/api/analytics/labs` | Admin | Lab utilization and occupancy |
+| `GET` | `/api/analytics/reservations` | Admin | Reservation funnel and status breakdown |
+| `GET` | `/api/analytics/peak-hours` | Admin | Peak hours and day-of-week usage |
+
+**Rewards (NEW: `backend/routes/rewards.js`)**
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/rewards/me` | Student | Points summary and recent transactions |
+| `GET` | `/api/rewards/leaderboard` | Authenticated | Top students by points |
+| `POST` | `/api/rewards/adjust` | Admin | Add or remove points for a student |
+| `GET` | `/api/rewards/history` | Admin | Rewards history with filters |
+
+**Integration note:** When a sit-in session is completed in `routes/sitin.js`, add a points award and insert a `reward_transactions` record.
+
+**Register in `backend/index.js`**
+
+```js
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/rewards', require('./routes/rewards'));
 ```
 
----
+### 5c. Student Dashboard Frontend (`StudentDashboard.jsx`)
 
-### Phase 3 — Student Dashboard Frontend
+- **Rewards tab** (or rewards card on Dashboard)
+  - Current points total
+  - Recent transactions list
+  - Leaderboard preview (top 10)
 
-#### [MODIFY] [StudentDashboard.jsx](file:///c:/Download/SitIn-Monitoring/SitIn-Monitoring-System---SYSARCH/app/landing/StudentDashboard.jsx)
+### 5d. Admin Dashboard Frontend (`Dashboard.jsx`)
 
-Add new tabs to the student navigation and implement the following views:
-
-**New Tabs:** `dashboard` (existing) | `history` | `reservation` | `rewards` | `settings` (existing)
-
-##### Tab: Dashboard (enhanced)
-- Show **remaining sessions** counter card (already available via `user.remaining_sessions`)
-- Show **reward points** summary card
-- Show **recent notifications** indicator (bell icon with unread count badge)
-- Connect announcements to DB-backed API (`/api/announcements`)
-
-##### Tab: History
-- Table showing student's sit-in history from `/api/sitin/my/history`
-- Columns: Lab, Purpose, Date, Duration, Rating, Feedback
-- Each row has a "Leave Feedback" button → opens a modal to submit a 1-5 star rating + text feedback
-- Filter by date range
-
-##### Tab: Reservation
-- Lab selector dropdown (Lab 524, 526, 530, 542, 544)
-- Date picker + time slot picker
-- **Visual grid** of computers (e.g. 5×8 grid for 40 computers)
-  - 🟢 Green = available → clickable to reserve
-  - 🔴 Red = occupied/reserved → shows who reserved (tooltip)
-- "My Reservations" section below showing active reservations with cancel option
-
-##### Tab: Rewards
-- Large point counter display
-- History timeline showing point awards and reasons
-- Mini leaderboard widget showing top 5
-
-##### Notification Bell (Nav Bar)
-- Bell icon with unread count badge in the nav bar
-- Dropdown panel showing recent notifications
-- "Mark all as read" button
-- Notification types: new announcement, session reminder, points awarded
-
----
-
-### Phase 4 — Admin Dashboard Frontend
-
-#### [MODIFY] [Dashboard.jsx](file:///c:/Download/SitIn-Monitoring/SitIn-Monitoring-System---SYSARCH/app/landing/Dashboard.jsx)
-
-Add new tabs to the admin navigation and implement the following views:
-
-**Updated Tabs:** `dashboard` | `users` | `sitin` | `announcements` | `reservation` | `reports` | `analytics` | `rewards` | `settings`
-
-##### Tab: Announcements (enhanced)
-- Keep existing UI but switch from in-memory to DB-backed API (`/api/announcements`)
-- When creating an announcement, backend automatically pushes notifications to all students
-
-##### Tab: Reports (new)
-- Two export buttons: "Export CSV" and "Export PDF"
-- Date range filter (from/to date)
-- Optional lab filter
-- Preview table of records before export
-- Downloads trigger file download via anchor tag or `window.open()`
-
-##### Tab: Reservation (new)
-- Same visual grid as student but with admin powers:
-  - View all labs' occupancy at a glance
-  - Cancel any student's reservation
-  - See full reservation list in table view below the grid
-
-##### Tab: Analytics (new)
-- Summary stat cards: Total Sit-Ins, Avg Duration, Most Popular Lab, Most Popular Purpose
-- Bar chart: Sit-ins per day (last 7/30 days toggle)
-- Donut chart: Distribution by lab
-- Bar chart: Distribution by purpose/language
-- Line chart: Peak hours heatmap
-- Uses existing SVG `BarChart` and `DonutChart` components already in the file
-
-##### Tab: Rewards (new)
-- Search student → award points form (student search, points amount, reason input)
-- **Leaderboard table**: Rank, Student Name, ID, Course, Points
-  - Top 3 highlighted with gold/silver/bronze styling
-- Award history log
-
----
-
-### Phase 5 — NPM Dependencies
-
-#### [MODIFY] [package.json](file:///c:/Download/SitIn-Monitoring/SitIn-Monitoring-System---SYSARCH/backend/package.json)
-
-New backend dependencies:
-```
-npm install json2csv pdfkit
-```
-
-No new frontend dependencies needed — everything will be built with existing tools (React, Lucide icons, existing SVG chart components).
+- **Analytics tab** with charts (sessions by day, lab utilization, peak hours)
+- **Reports tab** with filters and export buttons (CSV/PDF) and history list
+- **Rewards tab** with student search, adjust points, and leaderboard
 
 ---
 
 ## Implementation Order
 
-> [!TIP]
-> Dependencies are sequential per phase, but phases can partially overlap.
-
 ```
-Phase 1: Database Schema (all tables)
+Phase 1: Database Schema (all new tables + migrations)
   ↓
-Phase 2: Backend APIs (in this order):
-  2a. Announcements (DB persistence) + Notification routes
-  2b. Student sit-in history + feedback
-  2c. Reservation routes
-  2d. Rewards + Leaderboard routes
-  2e. Reports (CSV/PDF) routes
-  2f. Analytics routes
+Phase 2: Backend APIs:
+  2a. Reservation routes (student + admin)
+  2b. Testimonial routes (student + admin)
   ↓
-Phase 3: Student Dashboard Frontend
-  3a. Remaining sessions + announcement connection
-  3b. Notification bell + dropdown
-  3c. Sit-in history + feedback tab
-  3d. Reservation tab (visual grid)
-  3e. Rewards tab
+Phase 3: Student Dashboard Frontend:
+  3a. Reservation tab (enable/disable + PC grid + my reservations)
+  3b. Testimonials tab (submit form + my testimonials)
   ↓
-Phase 4: Admin Dashboard Frontend
-  4a. Announcements → DB migration
-  4b. Reports tab (CSV/PDF export)
-  4c. Reservation management tab
-  4d. Analytics tab
-  4e. Rewards + Leaderboard tab
+Phase 4: Admin Dashboard Frontend:
+  4a. Reservation management tab (pending + PC mgmt + logs + all)
+  4b. Testimonials management tab (pending review + all)
+  ↓
+Phase 5: Reports + Analytics + Rewards
+  5a. Reward points + report schema additions
+  5b. Reports + analytics + rewards APIs
+  5c. Student rewards UI
+  5d. Admin analytics/reports/rewards UI
 ```
 
 ---
 
 ## Open Questions
 
-> [!IMPORTANT]
-> Please review and answer these before implementation begins:
-
-1. **Reservation Time Slots**: What are the available time slots? Should they be:
-   - Fixed slots (e.g. `08:00-10:00`, `10:00-12:00`, `13:00-15:00`, `15:00-17:00`)?
-   - Or free-form (student picks start/end time)?
-
-2. **Computers Per Lab**: Is 40 computers per lab correct, or does it vary? Should we make it configurable per lab?
-
-3. **Reward Points Logic**: Should points be awarded **only manually** by admin, or also automatically (e.g. +5 points per completed sit-in session)?
-
-4. **Report Filters**: For CSV/PDF export, should reports include filters like date range, specific lab, or specific student?
-
-5. **Announcement Notifications**: Should notifications be **real-time** (WebSocket/SSE push) or **poll-based** (student dashboard polls every 30s)? Poll-based is simpler to implement.
-
-6. **Leaderboard Visibility**: Should students also see the full leaderboard, or only the top 5 in their rewards tab?
+1. **Reservation Time Slots**: Fixed slots (e.g. `08:00-10:00`, `10:00-12:00`, `13:00-15:00`, `15:00-17:00`) or free-form?
+2. **Computers Per Lab**: Is 40 per lab correct? Configurable?
+3. **Auto-Approval**: Require admin approval or auto-approve if PC available?
+4. **Testimonial Moderation**: Auto-publish or require admin approval?
+5. **Reservation Limits**: Max active reservations per student?
+6. **Notification Integration**: Notify students on reservation approve/decline?
+7. **Reports Storage**: Generate on-demand only, or store files for download/history?
+8. **Report Formats**: CSV only, or also PDF?
+9. **Rewards Policy**: Points per completed sit-in, per day, or manual only?
+10. **Leaderboard Scope**: All-time, monthly, or weekly?
 
 ---
 
 ## Verification Plan
 
 ### Automated Tests
-- Start backend server and test all new API endpoints with `curl` commands
-- Verify database migrations run successfully on startup
-- Test CSV/PDF download endpoints return valid file content
-- Verify reservation conflict detection (double-booking same computer/slot)
+- Test all API endpoints with `curl`
+- Verify migrations run on startup
+- Test double-booking prevention
+- Test enable/disable reservation toggle
+- Test approve/decline flow
+- Verify audit logs created for every action
+- Test report generation for CSV/PDF
+- Test analytics aggregation endpoints
+- Test points award and rewards transactions
 
 ### Manual Verification
-- Use the browser tool to:
-  1. Log in as admin → create announcement → verify it persists after server restart
-  2. Log in as student → verify announcement appears with notification badge
-  3. Test reservation flow: select lab → see green/red grid → reserve → see it turn red
-  4. Test sit-in history with feedback submission
-  5. Test report download (CSV opens in spreadsheet, PDF renders correctly)
-  6. Award reward points as admin → verify student sees updated points
-  7. Check leaderboard ordering
+1. Student: enable reservation → select lab → reserve PC → see pending status
+2. Admin: view pending → approve → student sees "Approved"
+3. Admin: decline with notes → student sees reason
+4. Admin: toggle PC maintenance → student grid updates
+5. Admin: check reservation logs
+6. Student: submit testimonial → admin sees pending
+7. Admin: approve testimonial → status changes
+8. Admin: generate CSV/PDF report with filters
+9. Admin: analytics charts load with date range
+10. Student: points awarded after sit-in completion
+11. Admin: adjust points and leaderboard updates
 
 ### Build Verification
-- `npm run dev` on frontend (Next.js) — no build errors
-- `node index.js` on backend — no startup errors, all migrations pass
+- `npm run dev` — no frontend errors
+- `node index.js` — no backend errors, migrations pass
