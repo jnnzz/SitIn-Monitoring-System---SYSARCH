@@ -9,6 +9,7 @@ import { ToastStack } from '@/components/ui/toast-stack'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { TablePagination, paginateItems } from '@/components/ui/table-pagination'
 import { useToasts } from '@/lib/use-toasts'
+import { AIChatbot } from '@/components/ui/ai-chatbot'
 
 const TABLE_PAGE_SIZE = 10
 
@@ -162,28 +163,24 @@ export default function StudentDashboard() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
   // Reservation
-  const [reservationEnabled, setReservationEnabled] = useState(false)
   const [labs, setLabs] = useState([])
   const [selectedLabId, setSelectedLabId] = useState('')
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTimeSlot, setSelectedTimeSlot] = useState('08:00-10:00')
   const [labComputers, setLabComputers] = useState([])
   const [myReservations, setMyReservations] = useState([])
+  const [reservationRecommendations, setReservationRecommendations] = useState([])
+  const [recommendationLoading, setRecommendationLoading] = useState(false)
+  const [recommendationGeneratedAt, setRecommendationGeneratedAt] = useState('')
   const [reservationPurpose, setReservationPurpose] = useState('')
   const [confirmReservationModal, setConfirmReservationModal] = useState(null)
 
-  // Testimonials
-  const [myTestimonials, setMyTestimonials] = useState([])
-  const [testimonialForm, setTestimonialForm] = useState({ content: '', rating: 5 })
-
-  // Rewards
-  const [rewardsSummary, setRewardsSummary] = useState({ points: 0, transactions: [] })
+  // Leaderboard
+  const [sessionStats, setSessionStats] = useState({ total_sessions: 0, total_minutes: 0, total_hours: 0, formatted_duration: '0m', recent_sessions: [] })
   const [leaderboard, setLeaderboard] = useState([])
   const [tablePages, setTablePages] = useState({
-    history: 1,
+    sitinHistory: 1,
     myReservations: 1,
-    myTestimonials: 1,
-    rewardTransactions: 1,
   })
   const { toasts, pushToast, removeToast } = useToasts()
   const fileInputRef = useRef(null)
@@ -235,7 +232,6 @@ export default function StudentDashboard() {
       if (!res.ok) return
       const profile = await res.json()
       setUser(profile)
-      setReservationEnabled(Boolean(profile?.reservation_enabled))
       localStorage.setItem('user', JSON.stringify(profile))
       setEditData({
         course: profile?.course || '',
@@ -269,7 +265,7 @@ export default function StudentDashboard() {
   }, [])
 
   const fetchLabComputers = useCallback(async () => {
-    if (!selectedLabId || !selectedTimeSlot || !reservationEnabled) return
+    if (!selectedLabId || !selectedTimeSlot) return
     const dateToUse = selectedDate || new Date().toISOString().split('T')[0]
     try {
       const params = new URLSearchParams({ date: dateToUse, time_slot: selectedTimeSlot })
@@ -278,24 +274,38 @@ export default function StudentDashboard() {
       })
       if (res.ok) setLabComputers(await res.json())
     } catch (e) { console.error(e) }
-  }, [selectedLabId, selectedDate, selectedTimeSlot, reservationEnabled])
+  }, [selectedLabId, selectedDate, selectedTimeSlot])
 
-  const fetchMyTestimonials = useCallback(async () => {
+  const fetchReservationRecommendations = useCallback(async () => {
+    if (!selectedTimeSlot) return
+    const dateToUse = selectedDate || new Date().toISOString().split('T')[0]
+    setRecommendationLoading(true)
     try {
-      const res = await fetch('/api/testimonials/my', {
+      const params = new URLSearchParams({ date: dateToUse, time_slot: selectedTimeSlot, limit: '3' })
+      const res = await fetch(`/api/reservations/recommend?${params.toString()}`, {
         headers: { Authorization: `Bearer ${getToken()}` }
       })
-      if (res.ok) setMyTestimonials(await res.json())
-    } catch (e) { console.error(e) }
-  }, [])
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        setReservationRecommendations(Array.isArray(data?.recommendations) ? data.recommendations : [])
+        setRecommendationGeneratedAt(data?.generated_at || '')
+      } else {
+        setReservationRecommendations([])
+      }
+    } catch (e) {
+      console.error(e)
+      setReservationRecommendations([])
+    }
+    setRecommendationLoading(false)
+  }, [selectedDate, selectedTimeSlot])
 
-  const fetchRewards = useCallback(async () => {
+  const fetchLeaderboard = useCallback(async () => {
     try {
       const [meRes, boardRes] = await Promise.all([
         fetch('/api/rewards/me', { headers: { Authorization: `Bearer ${getToken()}` } }),
         fetch('/api/rewards/leaderboard?limit=10', { headers: { Authorization: `Bearer ${getToken()}` } }),
       ])
-      if (meRes.ok) setRewardsSummary(await meRes.json())
+      if (meRes.ok) setSessionStats(await meRes.json())
       if (boardRes.ok) setLeaderboard(await boardRes.json())
     } catch (e) { console.error(e) }
   }, [])
@@ -333,17 +343,23 @@ export default function StudentDashboard() {
       fetchLabs()
       fetchMyReservations()
     }
-    if (activeTab === 'testimonials') {
-      fetchMyTestimonials()
+    if (activeTab === 'software') {
+      fetchLabs()
     }
-    if (activeTab === 'rewards') {
-      fetchRewards()
+    if (activeTab === 'leaderboard') {
+      fetchLeaderboard()
     }
-  }, [activeTab, fetchLabs, fetchMyReservations, fetchMyTestimonials, fetchRewards])
+  }, [activeTab, fetchLabs, fetchMyReservations, fetchLeaderboard])
 
   useEffect(() => {
     fetchLabComputers()
   }, [fetchLabComputers])
+
+  useEffect(() => {
+    if (activeTab === 'reservation') {
+      fetchReservationRecommendations()
+    }
+  }, [activeTab, fetchReservationRecommendations])
 
   // Close notification panel when clicking outside
   useEffect(() => {
@@ -479,28 +495,14 @@ export default function StudentDashboard() {
     router.push('/')
   }
 
-  const handleReservationToggle = async (enabled) => {
-    try {
-      const res = await fetch('/api/reservations/toggle', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ enabled })
-      })
-      const data = await res.json().catch(() => null)
-      if (res.ok) {
-        setReservationEnabled(Boolean(data?.reservation_enabled))
-        pushToast({ type: 'success', title: enabled ? 'Reservation enabled' : 'Reservation disabled' })
-      } else {
-        pushToast({ type: 'error', title: data?.error || 'Failed to update reservation toggle' })
-      }
-    } catch (e) {
-      pushToast({ type: 'error', title: 'Connection error' })
-    }
-  }
-
   const handleCreateReservation = (computer) => {
     if (!selectedLabId || !selectedTimeSlot) {
       pushToast({ type: 'warning', title: 'Select lab and time slot first' })
+      return
+    }
+    const lab = labs.find((l) => String(l.id) === String(selectedLabId))
+    if (lab?.reservation_enabled === false) {
+      pushToast({ type: 'warning', title: 'Reservations are disabled for this laboratory' })
       return
     }
 
@@ -537,7 +539,6 @@ export default function StudentDashboard() {
         pushToast({ type: 'success', title: `PC #${computer.computer_number} reserved` })
         fetchLabComputers()
         fetchMyReservations()
-        setReservationEnabled(true)
         setConfirmReservationModal(null)
       } else {
         pushToast({ type: 'error', title: data?.error || 'Failed to create reservation' })
@@ -581,55 +582,9 @@ export default function StudentDashboard() {
       const data = await res.json().catch(() => null)
       if (res.ok) {
         setTestimonialForm({ content: '', rating: 5 })
-        pushToast({ type: 'success', title: 'Testimonial submitted' })
-        fetchMyTestimonials()
+        pushToast({ type: 'success', title: 'Testimonial submitted and published' })
       } else {
         pushToast({ type: 'error', title: data?.error || 'Failed to submit testimonial' })
-      }
-    } catch (e) {
-      pushToast({ type: 'error', title: 'Connection error' })
-    }
-  }
-
-  const handleDeleteTestimonial = async (testimonialId) => {
-    try {
-      const res = await fetch(`/api/testimonials/${testimonialId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${getToken()}` }
-      })
-      const data = await res.json().catch(() => null)
-      if (res.ok) {
-        pushToast({ type: 'success', title: 'Testimonial deleted' })
-        fetchMyTestimonials()
-      } else {
-        pushToast({ type: 'error', title: data?.error || 'Failed to delete testimonial' })
-      }
-    } catch (e) {
-      pushToast({ type: 'error', title: 'Connection error' })
-    }
-  }
-
-  const handleEditTestimonial = async (item) => {
-    if (item.status !== 'pending') return
-    const nextContent = prompt('Update testimonial content:', item.content || '')
-    if (nextContent === null) return
-    const trimmed = nextContent.trim()
-    if (!trimmed) {
-      pushToast({ type: 'warning', title: 'Content is required' })
-      return
-    }
-    try {
-      const res = await fetch(`/api/testimonials/${item.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ content: trimmed, rating: item.rating || 5 })
-      })
-      const data = await res.json().catch(() => null)
-      if (res.ok) {
-        pushToast({ type: 'success', title: 'Testimonial updated' })
-        fetchMyTestimonials()
-      } else {
-        pushToast({ type: 'error', title: data?.error || 'Failed to update testimonial' })
       }
     } catch (e) {
       pushToast({ type: 'error', title: 'Connection error' })
@@ -674,15 +629,19 @@ export default function StudentDashboard() {
   }
   const historyPage = paginateItems(history, tablePages.history, TABLE_PAGE_SIZE)
   const myReservationsPage = paginateItems(myReservations, tablePages.myReservations, TABLE_PAGE_SIZE)
-  const myTestimonialsPage = paginateItems(myTestimonials, tablePages.myTestimonials, TABLE_PAGE_SIZE)
-  const rewardTransactionsPage = paginateItems(rewardsSummary.transactions || [], tablePages.rewardTransactions, TABLE_PAGE_SIZE)
+  // leaderboard has no pagination needed
+  const selectedLab = labs.find((lab) => String(lab.id) === String(selectedLabId))
+  const selectedLabSoftware = Array.isArray(selectedLab?.softwares) ? selectedLab.softwares : []
+  const selectedLabReservationEnabled = selectedLab?.reservation_enabled !== false
+  const selectedLabRecommendation = reservationRecommendations.find((item) => String(item.lab_id) === String(selectedLabId))
 
   const tabs = [
     { key: 'dashboard', label: 'Overview', icon: <User size={15} /> },
     { key: 'history', label: 'Sit-In History', icon: <History size={15} /> },
     { key: 'reservation', label: 'Reservation', icon: <CalendarDays size={15} /> },
+    { key: 'software', label: 'Software', icon: <BookOpen size={15} /> },
     { key: 'testimonials', label: 'Testimonials', icon: <MessageSquare size={15} /> },
-    { key: 'rewards', label: 'Rewards', icon: <Trophy size={15} /> },
+    { key: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={15} /> },
     { key: 'settings', label: 'Settings', icon: <User size={15} /> },
   ]
 
@@ -1244,29 +1203,11 @@ export default function StudentDashboard() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-bold">Laboratory Reservation</h2>
-                <p className="text-sm text-gray-400">Reserve an available workstation by lab and time slot.</p>
+                <p className="text-sm text-gray-400">Reserve an available workstation by lab and time slot. Reservation availability is controlled by admin per lab.</p>
               </div>
-              <button
-                onClick={() => handleReservationToggle(!reservationEnabled)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold border transition ${
-                  reservationEnabled
-                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
-                    : 'bg-red-500/15 border-red-500/40 text-red-400'
-                }`}
-              >
-                {reservationEnabled ? 'Disable Reservation' : 'Enable Reservation'}
-              </button>
             </div>
 
-            {!reservationEnabled ? (
-              <div className="bento-card text-center py-16 text-gray-500">
-                <CalendarDays size={48} className="mx-auto mb-4 opacity-30" />
-                <p className="font-semibold">Reservation is currently disabled</p>
-                <p className="text-sm text-gray-600 mt-1">Enable reservation to book a laboratory computer.</p>
-              </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                   <select
                     value={selectedLabId}
                     onChange={(e) => setSelectedLabId(e.target.value)}
@@ -1299,6 +1240,209 @@ export default function StudentDashboard() {
                     className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
                   />
                 </div>
+
+                <div className="bento-card relative overflow-hidden">
+                  {/* Background glow */}
+                  <div className="absolute -top-20 -right-20 w-60 h-60 bg-amber-500 rounded-full mix-blend-multiply filter blur-[120px] opacity-[0.04]" />
+                  <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-purple-500 rounded-full mix-blend-multiply filter blur-[100px] opacity-[0.04]" />
+
+                  <div className="relative z-10">
+                    <div className="flex items-start justify-between gap-3 mb-5">
+                      <div>
+                        <h3 className="font-bold text-lg flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-amber-500/30">
+                            <Zap size={14} className="text-amber-400" />
+                          </div>
+                          AI Lab Recommendation
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold uppercase tracking-wider">Smart</span>
+                        </h3>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Best lab suggestions for <span className="text-gray-300 font-semibold">{selectedTimeSlot}</span> powered by live capacity, sit-in history, and demand analysis.
+                        </p>
+                      </div>
+                      <button
+                        onClick={fetchReservationRecommendations}
+                        disabled={recommendationLoading}
+                        className="px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500/15 to-orange-500/10 border border-amber-500/30 text-amber-300 hover:from-amber-500/25 hover:to-orange-500/20 transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                      >
+                        {recommendationLoading ? (
+                          <><div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" /> Analyzing...</>
+                        ) : (
+                          <><Zap size={12} /> Refresh AI</>
+                        )}
+                      </button>
+                    </div>
+
+                    {recommendationLoading ? (
+                      <div className="flex flex-col items-center justify-center py-10">
+                        <div className="w-10 h-10 rounded-full border-2 border-amber-400 border-t-transparent animate-spin mb-4" />
+                        <p className="text-sm text-gray-400 font-medium">Analyzing reservation patterns & sit-in history...</p>
+                        <p className="text-xs text-gray-600 mt-1">Checking live capacity, historical trends, and active sessions</p>
+                      </div>
+                    ) : reservationRecommendations.length === 0 ? (
+                      <div className="text-center py-10">
+                        <Zap size={32} className="mx-auto mb-3 text-gray-700" />
+                        <p className="text-sm text-gray-500 font-semibold">No recommendation data available</p>
+                        <p className="text-xs text-gray-600 mt-1">Select a date and time slot, then click Refresh AI.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {reservationRecommendations.map((item, index) => {
+                          const isBest = item.is_best_pick
+                          const isSelected = String(item.lab_id) === String(selectedLabId)
+                          const scoreColor = item.recommendation_score >= 80 ? 'emerald' : item.recommendation_score >= 60 ? 'amber' : 'red'
+                          const demandColor = item.demand_level === 'Very High' ? 'text-red-400 bg-red-500/15 border-red-500/30'
+                            : item.demand_level === 'High' ? 'text-orange-400 bg-orange-500/15 border-orange-500/30'
+                            : item.demand_level === 'Moderate' ? 'text-amber-400 bg-amber-500/15 border-amber-500/30'
+                            : 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30'
+
+                          return (
+                            <div
+                              key={`${item.lab_id}-${item.time_slot}-${index}`}
+                              className={`rounded-2xl border p-4 transition-all duration-200 ${
+                                isBest
+                                  ? 'bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.08)]'
+                                  : isSelected
+                                    ? 'bg-purple-500/8 border-purple-500/30'
+                                    : 'bg-black/20 border-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.12)]'
+                              }`}
+                            >
+                              {/* Top row: Lab name + badges */}
+                              <div className="flex items-center justify-between gap-3 mb-3">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {isBest ? (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500/25 to-yellow-500/15 border border-amber-400/40 text-amber-300 font-bold flex items-center gap-1">
+                                      🏆 Best Pick
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 border border-indigo-500/25 text-indigo-400 font-bold">
+                                      #{index + 1}
+                                    </span>
+                                  )}
+                                  <span className="text-sm font-bold">{item.lab_name}</span>
+                                  {isSelected && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/35 text-purple-300 font-bold">
+                                      Selected
+                                    </span>
+                                  )}
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-bold ${demandColor}`}>
+                                    {item.demand_level} Demand
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={() => setSelectedLabId(String(item.lab_id))}
+                                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                                    isBest
+                                      ? 'bg-gradient-to-r from-amber-500/20 to-yellow-500/15 border border-amber-400/40 text-amber-200 hover:from-amber-500/30'
+                                      : 'bg-white/8 border border-white/12 hover:bg-white/12 text-gray-300'
+                                  }`}
+                                >
+                                  Use Lab
+                                </button>
+                              </div>
+
+                              {/* Score bar + stats row */}
+                              <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-center">
+                                <div className="space-y-2">
+                                  {/* Score bar */}
+                                  <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider">AI Score</span>
+                                      <span className={`text-sm font-black text-${scoreColor}-400`}>{item.recommendation_score}%</span>
+                                    </div>
+                                    <div className="h-2 rounded-full bg-black/40 overflow-hidden">
+                                      <div
+                                        className={`h-full rounded-full bg-gradient-to-r ${
+                                          scoreColor === 'emerald' ? 'from-emerald-500 to-emerald-400' :
+                                          scoreColor === 'amber' ? 'from-amber-500 to-yellow-400' :
+                                          'from-red-500 to-orange-400'
+                                        } transition-all duration-500`}
+                                        style={{ width: `${item.recommendation_score}%` }}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Reason */}
+                                  <p className="text-xs text-gray-400">{item.reason}</p>
+                                </div>
+
+                                {/* Quick stats */}
+                                <div className="flex sm:flex-col gap-3 sm:gap-1.5 text-right">
+                                  <div className="text-[11px]">
+                                    <span className="text-gray-500">Free PCs </span>
+                                    <span className="text-white font-bold">{item.available_now}/{item.usable_computers}</span>
+                                  </div>
+                                  {item.active_sitins > 0 && (
+                                    <div className="text-[11px]">
+                                      <span className="text-gray-500">Active </span>
+                                      <span className="text-cyan-400 font-bold">{item.active_sitins} sit-in{item.active_sitins > 1 ? 's' : ''}</span>
+                                    </div>
+                                  )}
+                                  <div className="text-[11px]">
+                                    <span className="text-gray-500">Risk </span>
+                                    <span className={`font-bold ${
+                                      item.crowded_risk >= 70 ? 'text-red-400' : item.crowded_risk >= 40 ? 'text-amber-400' : 'text-emerald-400'
+                                    }`}>{item.crowded_risk}%</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Bottom detail row */}
+                              <div className="flex items-center gap-3 mt-2.5 pt-2.5 border-t border-[rgba(255,255,255,0.04)] flex-wrap">
+                                {item.utilization_pct > 0 && (
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="w-16 h-1.5 rounded-full bg-black/40 overflow-hidden">
+                                      <div
+                                        className={`h-full rounded-full ${
+                                          item.utilization_pct >= 80 ? 'bg-red-500' : item.utilization_pct >= 50 ? 'bg-amber-500' : 'bg-emerald-500'
+                                        }`}
+                                        style={{ width: `${Math.min(item.utilization_pct, 100)}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-[10px] text-gray-500">{item.utilization_pct}% utilized</span>
+                                  </div>
+                                )}
+                                {item.sitin_sessions_90d > 0 && (
+                                  <span className="text-[10px] text-gray-600">
+                                    {item.sitin_sessions_90d} sit-ins (90d)
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-gray-600">
+                                  Confidence: {item.confidence}%
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* Footer: data sources + timestamp */}
+                    <div className="flex items-center justify-between mt-4 pt-3 border-t border-[rgba(255,255,255,0.04)] flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] text-gray-600 font-semibold">Data:</span>
+                        {['Live Capacity', 'Sit-In History', 'Reservations', 'Active Sessions'].map((src) => (
+                          <span key={src} className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 border border-white/8 text-gray-500 font-medium">
+                            {src}
+                          </span>
+                        ))}
+                      </div>
+                      {recommendationGeneratedAt && (
+                        <span className="text-[10px] text-gray-600">
+                          Updated: {new Date(recommendationGeneratedAt).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {!selectedLabReservationEnabled && (
+                  <div className="bento-card text-center py-10 text-gray-500">
+                    <CalendarDays size={40} className="mx-auto mb-3 opacity-30" />
+                    <p className="font-semibold">Reservations are disabled for this laboratory</p>
+                    <p className="text-sm text-gray-600 mt-1">Please select another lab or ask admin to enable reservations.</p>
+                  </div>
+                )}
 
                 <div className="bento-card">
                   <div className="flex items-center justify-between mb-5">
@@ -1354,15 +1498,18 @@ export default function StudentDashboard() {
                       const isMine = computer.display_status === 'mine' || computer.display_status === 'approved';
                       const isReserved = computer.display_status === 'reserved';
                       const isMaintenance = computer.display_status === 'maintenance';
-                      const clickable = isAvailable;
+                      const isAvailableForBooking = isAvailable && selectedLabReservationEnabled;
+                      const clickable = isAvailableForBooking;
                       return (
                         <button
                           key={computer.id}
                           onClick={() => clickable && handleCreateReservation(computer)}
                           disabled={!clickable}
                           className={`group relative rounded-xl text-xs border-2 transition-all duration-200 flex flex-col items-center justify-center gap-1 min-h-[68px] ${
-                            isAvailable
+                            isAvailableForBooking
                               ? 'bg-gradient-to-b from-emerald-500/15 to-emerald-900/10 border-emerald-500/40 text-emerald-300 hover:border-emerald-400/70 hover:shadow-[0_0_18px_rgba(52,211,153,0.2)] hover:scale-[1.06] cursor-pointer'
+                              : isAvailable
+                                ? 'bg-gradient-to-b from-gray-800/60 to-gray-900/60 border-gray-600/30 text-gray-500 cursor-not-allowed opacity-60'
                               : isMine
                                 ? 'bg-gradient-to-b from-amber-500/15 to-amber-900/15 border-amber-500/50 text-amber-300 cursor-default'
                                 : isReserved
@@ -1370,7 +1517,8 @@ export default function StudentDashboard() {
                                   : 'bg-gradient-to-b from-gray-800/60 to-gray-900/60 border-gray-600/30 text-gray-500 cursor-not-allowed opacity-60'
                           }`}
                           title={`PC ${computer.computer_number} — ${
-                            isAvailable ? 'Available – click to reserve' 
+                            isAvailableForBooking ? 'Available – click to reserve' 
+                            : isAvailable ? 'Available but reservations are disabled for this lab'
                             : isMine ? 'Your reservation' 
                             : isReserved ? 'Reserved by another student' 
                             : 'Under maintenance'
@@ -1378,7 +1526,8 @@ export default function StudentDashboard() {
                         >
                           {/* Status indicator dot */}
                           <div className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${
-                            isAvailable ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)] animate-pulse'
+                            isAvailableForBooking ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)] animate-pulse'
+                            : isAvailable ? 'bg-gray-600'
                             : isMine ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]'
                             : isReserved ? 'bg-red-400/80'
                             : 'bg-gray-600'
@@ -1409,7 +1558,7 @@ export default function StudentDashboard() {
                   </div>
                 </div>
 
-                <div className="bento-card p-0 overflow-hidden">
+            <div className="bento-card p-0 overflow-hidden">
                   <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)]">
                     <h3 className="font-bold">My Reservations</h3>
                   </div>
@@ -1460,8 +1609,65 @@ export default function StudentDashboard() {
                     onPageChange={(nextPage) => setTablePage('myReservations', nextPage)}
                   />
                 </div>
-              </>
-            )}
+          </div>
+        )}
+
+        {/* ══════ SOFTWARE TAB ══════ */}
+        {activeTab === 'software' && (
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-bold">Laboratory Software</h2>
+                <p className="text-sm text-gray-400">View available software per laboratory.</p>
+              </div>
+              <button
+                onClick={fetchLabs}
+                className="px-4 py-2 rounded-xl text-xs font-bold border bg-indigo-500/15 border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/25 transition"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div className="bento-card">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-2">Select Laboratory</label>
+                  <select
+                    value={selectedLabId}
+                    onChange={(e) => setSelectedLabId(e.target.value)}
+                    className="w-full bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500/50"
+                  >
+                    {labs.map((lab) => (
+                      <option key={lab.id} value={lab.id} className="bg-[#0d0d1f]">{lab.lab_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="text-sm text-gray-400">
+                  {selectedLab?.lab_name ? (
+                    <>Showing software in <span className="text-white font-semibold">{selectedLab.lab_name}</span></>
+                  ) : (
+                    'Select a lab to view software.'
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-xl border border-[rgba(255,255,255,0.06)] bg-black/20 p-4">
+                <div className="flex flex-wrap gap-2">
+                  {selectedLabSoftware.length === 0 ? (
+                    <span className="text-sm text-gray-500">No software listed for this laboratory yet.</span>
+                  ) : (
+                    selectedLabSoftware.map((item) => (
+                      <span
+                        key={item.id}
+                        className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs bg-indigo-500/15 border border-indigo-500/35 text-indigo-200"
+                      >
+                        {item.software_name}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1470,7 +1676,7 @@ export default function StudentDashboard() {
           <div className="flex flex-col gap-6">
             <div>
               <h2 className="text-2xl font-bold">Testimonials</h2>
-              <p className="text-sm text-gray-400 mt-1">Share your sit-in experience and track approval status.</p>
+              <p className="text-sm text-gray-400 mt-1">Share your sit-in experience. Submitted testimonials are published directly.</p>
             </div>
 
             <div className="bento-card">
@@ -1495,131 +1701,94 @@ export default function StudentDashboard() {
                 </button>
               </div>
             </div>
-
-            <div className="bento-card p-0 overflow-hidden">
-              <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)]">
-                <h3 className="font-bold">My Testimonials</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-[rgba(255,255,255,0.05)]">
-                      {['Date', 'Rating', 'Content', 'Status', 'Action'].map((h) => (
-                        <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {myTestimonialsPage.totalItems === 0 ? (
-                      <tr><td colSpan={5} className="text-center text-gray-600 py-8 text-sm">No testimonials yet</td></tr>
-                    ) : myTestimonialsPage.items.map((item) => (
-                      <tr key={item.id} className="border-b border-[rgba(255,255,255,0.03)]">
-                        <td className="px-6 py-4 text-xs text-gray-500">{new Date(item.created_at).toLocaleDateString()}</td>
-                        <td className="px-6 py-4"><StarRating value={item.rating || 0} readonly /></td>
-                        <td className="px-6 py-4 text-sm text-gray-300">{item.content}</td>
-                        <td className="px-6 py-4">
-                          <span className="px-2 py-1 rounded text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 uppercase">
-                            {item.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            {item.status === 'pending' && (
-                              <button
-                                onClick={() => handleEditTestimonial(item)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-500/15 border border-blue-500/40 text-blue-300 hover:bg-blue-500/25 transition"
-                              >
-                                Edit
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleDeleteTestimonial(item.id)}
-                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/15 border border-red-500/40 text-red-300 hover:bg-red-500/25 transition"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <TablePagination
-                page={myTestimonialsPage.currentPage}
-                totalPages={myTestimonialsPage.totalPages}
-                totalItems={myTestimonialsPage.totalItems}
-                pageSize={TABLE_PAGE_SIZE}
-                onPageChange={(nextPage) => setTablePage('myTestimonials', nextPage)}
-              />
-            </div>
           </div>
         )}
 
-        {/* ══════ REWARDS TAB ══════ */}
-        {activeTab === 'rewards' && (
+        {/* ══════ LEADERBOARD TAB ══════ */}
+        {activeTab === 'leaderboard' && (
           <div className="flex flex-col gap-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Your stats */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bento-card bg-gradient-to-br from-amber-500/15 to-yellow-500/5 border-amber-500/20">
-                <div className="flex items-center gap-3 mb-3">
-                  <Award className="text-amber-400" size={20} />
-                  <h3 className="font-bold">Current Points</h3>
+                <div className="flex items-center gap-3 mb-2">
+                  <Clock size={18} className="text-amber-400" />
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Hours</span>
                 </div>
-                <div className="text-4xl font-black text-amber-300">{rewardsSummary.points || 0}</div>
+                <div className="text-3xl font-black text-amber-300">{sessionStats.total_hours || 0}<span className="text-lg text-amber-500 ml-1">hrs</span></div>
               </div>
-              <div className="bento-card lg:col-span-2">
-                <h3 className="font-bold mb-3">Leaderboard (Top 10)</h3>
-                <div className="space-y-2 max-h-56 overflow-y-auto">
-                  {leaderboard.map((row, idx) => (
-                    <div key={row.id} className="flex items-center justify-between p-2.5 rounded-lg bg-black/20 border border-[rgba(255,255,255,0.04)]">
-                      <div className="text-sm">
-                        <span className="text-gray-500 mr-2">#{idx + 1}</span>
-                        <span className="font-semibold">{row.full_name}</span>
-                      </div>
-                      <div className="text-amber-300 font-bold">{row.reward_points} pts</div>
-                    </div>
-                  ))}
-                  {leaderboard.length === 0 && <div className="text-sm text-gray-600">No leaderboard data yet.</div>}
+              <div className="bento-card">
+                <div className="flex items-center gap-3 mb-2">
+                  <Monitor size={18} className="text-indigo-400" />
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Sessions</span>
+                </div>
+                <div className="text-3xl font-black">{sessionStats.total_sessions || 0}</div>
+              </div>
+              <div className="bento-card">
+                <div className="flex items-center gap-3 mb-2">
+                  <TrendingDown size={18} className="text-emerald-400" />
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Avg / Session</span>
+                </div>
+                <div className="text-3xl font-black">
+                  {sessionStats.total_sessions > 0 ? Math.round(sessionStats.total_minutes / sessionStats.total_sessions) : 0}
+                  <span className="text-lg text-gray-500 ml-1">min</span>
                 </div>
               </div>
             </div>
 
-            <div className="bento-card p-0 overflow-hidden">
-              <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)]">
-                <h3 className="font-bold">Recent Transactions</h3>
+            {/* Leaderboard */}
+            <div className="bento-card">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="p-1.5 rounded-lg bg-gradient-to-br from-amber-500/20 to-yellow-500/10 border border-amber-500/30">
+                  <Trophy size={16} className="text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg">Session Leaderboard</h3>
+                  <p className="text-xs text-gray-500">Top students ranked by total sit-in session hours</p>
+                </div>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-[rgba(255,255,255,0.05)]">
-                      {['Date', 'Delta', 'Reason', 'Source'].map((h) => (
-                        <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rewardTransactionsPage.totalItems === 0 ? (
-                      <tr><td colSpan={4} className="text-center text-gray-600 py-8 text-sm">No transactions yet</td></tr>
-                    ) : rewardTransactionsPage.items.map((tx) => (
-                      <tr key={tx.id} className="border-b border-[rgba(255,255,255,0.03)]">
-                        <td className="px-6 py-4 text-xs text-gray-500">{new Date(tx.created_at).toLocaleString()}</td>
-                        <td className={`px-6 py-4 text-sm font-bold ${tx.delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {tx.delta >= 0 ? `+${tx.delta}` : tx.delta}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-300">{tx.reason || '—'}</td>
-                        <td className="px-6 py-4 text-xs text-gray-500 uppercase">{tx.source || 'admin'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-2">
+                {leaderboard.map((row, idx) => {
+                  const maxMinutes = leaderboard[0]?.total_minutes || 1
+                  const barWidth = Math.max(5, (row.total_minutes / maxMinutes) * 100)
+                  const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null
+                  return (
+                    <div key={row.id} className={`flex items-center gap-3 p-3 rounded-xl border transition ${
+                      idx < 3 ? 'bg-amber-500/5 border-amber-500/15' : 'bg-black/20 border-[rgba(255,255,255,0.04)]'
+                    }`}>
+                      <div className="w-8 text-center shrink-0">
+                        {medal ? <span className="text-lg">{medal}</span> : <span className="text-xs text-gray-500 font-bold">#{idx + 1}</span>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-semibold truncate">{row.full_name}</span>
+                          <span className="text-sm font-black text-amber-300 shrink-0 ml-2">{row.formatted_duration}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-black/30 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              idx === 0 ? 'bg-gradient-to-r from-amber-400 to-yellow-400' :
+                              idx === 1 ? 'bg-gradient-to-r from-gray-300 to-gray-400' :
+                              idx === 2 ? 'bg-gradient-to-r from-orange-500 to-amber-600' :
+                              'bg-indigo-500/60'
+                            }`}
+                            style={{ width: `${barWidth}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] text-gray-500">{row.total_sessions} session{row.total_sessions !== 1 ? 's' : ''}</span>
+                          {row.course && <span className="text-[10px] text-gray-600">• {row.course}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                {leaderboard.length === 0 && (
+                  <div className="text-center py-10">
+                    <Trophy size={32} className="mx-auto mb-3 text-gray-700" />
+                    <p className="text-sm text-gray-500">No session data yet. Complete sit-in sessions to appear on the leaderboard!</p>
+                  </div>
+                )}
               </div>
-              <TablePagination
-                page={rewardTransactionsPage.currentPage}
-                totalPages={rewardTransactionsPage.totalPages}
-                totalItems={rewardTransactionsPage.totalItems}
-                pageSize={TABLE_PAGE_SIZE}
-                onPageChange={(nextPage) => setTablePage('rewardTransactions', nextPage)}
-              />
             </div>
           </div>
         )}
@@ -1742,7 +1911,7 @@ export default function StudentDashboard() {
 
       {/* ── FEEDBACK MODAL ── */}
       {feedbackModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
           <div className="bg-[#0d0d1f] border border-[rgba(255,255,255,0.08)] rounded-2xl w-full max-w-md shadow-2xl p-7">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-bold">Leave Feedback</h3>
@@ -1801,7 +1970,7 @@ export default function StudentDashboard() {
 
       {/* ── RESERVATION CONFIRMATION MODAL ── */}
       {confirmReservationModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
           <div className="bg-[#0d0d1f] border border-[rgba(255,255,255,0.08)] rounded-2xl w-full max-w-md shadow-2xl p-7">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-bold">Confirm Reservation</h3>
@@ -1861,6 +2030,7 @@ export default function StudentDashboard() {
           </div>
         </div>
       )}
+      <AIChatbot />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { Particles } from '@/components/ui/particles'
@@ -21,6 +21,7 @@ export default function Landing() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [showRegPass, setShowRegPass] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [publicTestimonials, setPublicTestimonials] = useState([])
   const { toasts, pushToast, removeToast } = useToasts()
 
   // Login state
@@ -43,6 +44,34 @@ export default function Landing() {
     address: '',
     agreeTerms: false
   })
+
+  const marqueeTestimonials = useMemo(() => {
+    if (!Array.isArray(publicTestimonials) || publicTestimonials.length === 0) return []
+    return [...publicTestimonials, ...publicTestimonials]
+  }, [publicTestimonials])
+
+  useEffect(() => {
+    let mounted = true
+
+    const fetchPublicTestimonials = async () => {
+      try {
+        const response = await fetch('/api/testimonials/public?limit=14')
+        if (!response.ok) return
+
+        const data = await response.json().catch(() => null)
+        if (mounted && Array.isArray(data)) {
+          setPublicTestimonials(data)
+        }
+      } catch (error) {
+        console.error('Failed to load public testimonials:', error)
+      }
+    }
+
+    fetchPublicTestimonials()
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   // Handle login input change
   const handleLoginChange = (e) => {
@@ -206,7 +235,7 @@ export default function Landing() {
 
   return (
     <div
-      className="app-theme-shell app-auth-shell relative w-screen min-h-screen flex overflow-hidden"
+      className="app-theme-shell app-auth-shell relative w-full min-h-screen overflow-x-hidden"
       style={{ fontFamily: "'Poppins', sans-serif" }}
     >
       <style>{`
@@ -250,7 +279,32 @@ export default function Landing() {
           align-self: stretch;
           margin: 0 12px;
         }
+
+        .testimonial-marquee {
+          position: relative;
+          overflow: hidden;
+          mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+          -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+        }
+
+        .testimonial-track {
+          display: flex;
+          gap: 12px;
+          width: max-content;
+          animation: testimonial-marquee-move 32s linear infinite;
+        }
+
+        .testimonial-marquee:hover .testimonial-track {
+          animation-play-state: paused;
+        }
+
+        @keyframes testimonial-marquee-move {
+          from { transform: translateX(0); }
+          to { transform: translateX(-50%); }
+        }
       `}</style>
+
+      <section className="relative w-screen min-h-screen flex overflow-hidden">
 
       <div className="absolute right-4 top-4 z-30">
         <ThemeToggle />
@@ -261,7 +315,7 @@ export default function Landing() {
 
       {/* ══════════ LEFT SIDE ══════════ */}
       <div
-        className="relative z-10 hidden lg:flex lg:flex-col justify-between w-full lg:w-1/2 min-h-screen px-6 sm:px-10 lg:px-14 py-6 sm:py-8 lg:py-10"
+        className="relative z-10 hidden lg:flex lg:flex-col justify-start w-full lg:w-1/2 min-h-screen px-6 sm:px-10 lg:px-14 py-6 sm:py-8 lg:py-10"
         // style={{ borderRight: '1px solid #1a1e40' }}
       >
 
@@ -363,19 +417,12 @@ export default function Landing() {
               ))}
             </div>
           </BlurFade>
-        </div>
 
-        {/* Bottom — Footer */}
-        <BlurFade delay={0.7} inView>
-          <div className="flex items-center gap-2">
-            {/* <div className="w-5 h-5 rounded-md flex items-center justify-center text-xs font-black text-white" style={{ backgroundColor: '#0E21A0' }}>S</div> */}
-            <span className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.3)' }}>SitIn Monitoring System · UC CCS · 2026</span>
-          </div>
-        </BlurFade>
+        </div>
       </div>
 
       {/* ══════════ RIGHT SIDE ══════════ */}
-      <div className="relative z-10 flex items-center justify-center w-full lg:w-1/2 px-4 sm:px-8 lg:px-12 py-6 sm:py-8 lg:py-10">
+      <div className="relative z-10 flex flex-col items-center justify-center w-full lg:w-1/2 px-4 sm:px-8 lg:px-12 py-6 sm:py-8 lg:py-10">
         <BlurFade delay={0.3} inView className="w-full max-w-xl">
           {/* Mobile Logo Header (Visible only on mobile) */}
           <div className="flex items-center justify-center gap-3 mb-6 lg:hidden">
@@ -715,7 +762,66 @@ export default function Landing() {
             </div> {/* Close inner scrollable div */}
           </div> {/* Close outer BorderBeam container */}
         </BlurFade>
+
       </div>
+
+      </section>
+
+      <section className="relative z-10 min-h-screen w-full px-4 sm:px-8 lg:px-12 py-14 sm:py-16 flex items-center justify-center">
+        <div className="w-full max-w-7xl">
+          <BlurFade delay={0.1} inView>
+            <div className="text-center mb-8 sm:mb-10">
+              <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">What Students Say</h2>
+              <p className="text-sm sm:text-base mt-3" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                Approved testimonials from students using the sit-in monitoring system.
+              </p>
+            </div>
+          </BlurFade>
+
+          <BlurFade delay={0.2} inView>
+            <div className="rounded-3xl p-5 sm:p-6 lg:p-8" style={{ backgroundColor: '#0f1127', border: '1px solid #1a1e40' }}>
+              {marqueeTestimonials.length > 0 ? (
+                <div className="testimonial-marquee py-2">
+                  <div className="testimonial-track pr-3">
+                    {marqueeTestimonials.map((item, index) => (
+                      <div
+                        key={`${item.id}-${index}`}
+                        className="shrink-0 rounded-2xl px-4 py-3.5"
+                        style={{ width: 290, backgroundColor: '#080a18', border: '1px solid #1a1e40' }}
+                      >
+                        <div className="text-xs mb-2" style={{ color: '#f5c542' }}>
+                          {'★'.repeat(Math.max(1, Number(item.rating) || 0))}
+                        </div>
+                        <p className="text-sm leading-relaxed line-clamp-4" style={{ color: 'rgba(255,255,255,0.78)' }}>
+                          “{item.content}”
+                        </p>
+                        <p className="text-xs mt-3 font-semibold truncate" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                          — {item.full_name || 'Student'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-center py-10" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                  Testimonials will appear here once approved by admin.
+                </p>
+              )}
+            </div>
+          </BlurFade>
+        </div>
+      </section>
+
+      <footer className="relative z-10 border-t border-[rgba(255,255,255,0.08)] px-4 sm:px-8 lg:px-12 py-6 sm:py-7">
+        <div className="w-full max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+          <p className="text-xs sm:text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.45)' }}>
+            SitIn Monitoring System · University of Cebu CCS
+          </p>
+          <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            © 2026 All rights reserved
+          </p>
+        </div>
+      </footer>
 
       <ToastStack toasts={toasts} onDismiss={removeToast} />
     </div>

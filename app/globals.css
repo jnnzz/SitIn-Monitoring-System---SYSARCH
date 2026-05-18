@@ -481,3 +481,65 @@ html.dark {
 .app-auth-shell .theme-auth-button:hover {
   background-color: var(--app-accent-strong) !important;
 }
+
+/* AI Chatbot animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floatBubble {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.animate-fade-in {
+  animation: fadeInUp 0.3s ease-out forwards;
+}
+
+.animate-float {
+  animation: floatBubble 3s ease-in-out infinite;
+}
+
+/* ── Global cursor rules ── */
+button,
+a,
+[role="button"],
+[role="tab"],
+[role="checkbox"],
+[role="radio"],
+[role="switch"],
+[role="menuitem"],
+[role="option"],
+select,
+label[for],
+label.cursor-pointer,
+summary,
+input[type="checkbox"],
+input[type="radio"],
+input[type="file"],
+input[type="range"],
+input[type="submit"],
+input[type="reset"],
+input[type="button"],
+.tab-btn,
+[onClick],
+[class*="cursor-pointer"] {
+  cursor: pointer !important;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled,
+[disabled],
+[aria-disabled="true"] {
+  cursor: not-allowed !important;
+  pointer-events: auto !important;
+}

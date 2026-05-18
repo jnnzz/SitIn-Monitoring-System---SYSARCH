@@ -9,6 +9,7 @@ import { ToastStack } from '@/components/ui/toast-stack'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { TablePagination, paginateItems } from '@/components/ui/table-pagination'
 import { useToasts } from '@/lib/use-toasts'
+import { AIChatbot } from '@/components/ui/ai-chatbot'
 
 const API = '/api/auth'
 const TABLE_PAGE_SIZE = 10
@@ -106,10 +107,12 @@ export default function AdminDashboard() {
   const [labs, setLabs] = useState([])
   const [selectedLabId, setSelectedLabId] = useState('')
   const [manageLabComputers, setManageLabComputers] = useState([])
+  const [labSoftwareInput, setLabSoftwareInput] = useState('')
+  const [savingLabSoftware, setSavingLabSoftware] = useState(false)
+  const [savingLabReservationToggle, setSavingLabReservationToggle] = useState(false)
 
   // Testimonials
   const [testimonials, setTestimonials] = useState([])
-  const [testimonialFilter, setTestimonialFilter] = useState('all')
 
   // Analytics
   const [analyticsSummary, setAnalyticsSummary] = useState(null)
@@ -127,10 +130,8 @@ export default function AdminDashboard() {
   const [reportHistory, setReportHistory] = useState([])
   const [reportLoading, setReportLoading] = useState(false)
 
-  // Rewards
+  // Leaderboard
   const [rewardLeaderboard, setRewardLeaderboard] = useState([])
-  const [rewardHistory, setRewardHistory] = useState([])
-  const [rewardAdjust, setRewardAdjust] = useState({ user_id: '', delta: '', reason: '' })
   const [tablePages, setTablePages] = useState({
     users: 1,
     sitinSearch: 1,
@@ -219,12 +220,11 @@ export default function AdminDashboard() {
   }, [selectedLabId])
 
   const fetchTestimonials = useCallback(async () => {
-    const statusQuery = testimonialFilter === 'all' ? '' : `?status=${encodeURIComponent(testimonialFilter)}`
     try {
-      const res = await fetch(`/api/testimonials/all${statusQuery}`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      const res = await fetch('/api/testimonials/all', { headers: { Authorization: `Bearer ${getToken()}` } })
       if (res.ok) setTestimonials(await res.json())
     } catch (e) { console.error(e) }
-  }, [testimonialFilter])
+  }, [])
 
   const fetchAnalytics = useCallback(async () => {
     try {
@@ -252,12 +252,8 @@ export default function AdminDashboard() {
 
   const fetchRewardsAdmin = useCallback(async () => {
     try {
-      const [leaderRes, historyRes] = await Promise.all([
-        fetch('/api/rewards/leaderboard?limit=20', { headers: { Authorization: `Bearer ${getToken()}` } }),
-        fetch('/api/rewards/history?limit=100', { headers: { Authorization: `Bearer ${getToken()}` } }),
-      ])
-      if (leaderRes.ok) setRewardLeaderboard(await leaderRes.json())
-      if (historyRes.ok) setRewardHistory(await historyRes.json())
+      const res = await fetch('/api/rewards/leaderboard?limit=20', { headers: { Authorization: `Bearer ${getToken()}` } })
+      if (res.ok) setRewardLeaderboard(await res.json())
     } catch (e) { console.error(e) }
   }, [])
 
@@ -366,6 +362,9 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (activeTab === 'reservation') {
       fetchReservations()
+      fetchLabs()
+    }
+    if (activeTab === 'software') {
       fetchLabs()
     }
     if (activeTab === 'testimonials') {
@@ -556,21 +555,88 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleReviewTestimonial = async (id, action) => {
+  const handleLabReservationToggle = async (enabled) => {
+    if (!selectedLabId) {
+      pushToast({ type: 'warning', title: 'Please select a lab first' })
+      return
+    }
+    const labName = labs.find((lab) => String(lab.id) === String(selectedLabId))?.lab_name
+
+    setSavingLabReservationToggle(true)
     try {
-      const res = await fetch(`/api/testimonials/${id}/${action}`, {
+      const res = await fetch(`/api/reservations/lab/${selectedLabId}/reservation-toggle`, {
         method: 'PUT',
-        headers: { Authorization: `Bearer ${getToken()}` }
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ enabled })
       })
       const data = await res.json().catch(() => null)
       if (res.ok) {
-        fetchTestimonials()
+        await fetchLabs()
+        pushToast({
+          type: 'success',
+          title: enabled ? 'Lab reservations enabled' : 'Lab reservations disabled',
+          description: labName || undefined,
+        })
       } else {
-        pushToast({ type: 'error', title: data?.error || `Failed to ${action} testimonial` })
+        pushToast({ type: 'error', title: data?.error || 'Failed to update reservation setting' })
       }
     } catch (e) {
       pushToast({ type: 'error', title: 'Connection error' })
     }
+    setSavingLabReservationToggle(false)
+  }
+
+  const handleAddLabSoftware = async () => {
+    const softwareName = labSoftwareInput.trim()
+    if (!selectedLabId) {
+      pushToast({ type: 'warning', title: 'Please select a lab first' })
+      return
+    }
+    if (!softwareName) {
+      pushToast({ type: 'warning', title: 'Software name is required' })
+      return
+    }
+
+    setSavingLabSoftware(true)
+    try {
+      const res = await fetch(`/api/reservations/lab/${selectedLabId}/software`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ software_name: softwareName })
+      })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        setLabSoftwareInput('')
+        await fetchLabs()
+        pushToast({ type: 'success', title: 'Software added to lab' })
+      } else {
+        pushToast({ type: 'error', title: data?.error || 'Failed to add software' })
+      }
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+    setSavingLabSoftware(false)
+  }
+
+  const handleRemoveLabSoftware = async (softwareId) => {
+    if (!selectedLabId) return
+    setSavingLabSoftware(true)
+    try {
+      const res = await fetch(`/api/reservations/lab/${selectedLabId}/software/${softwareId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getToken()}` }
+      })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        await fetchLabs()
+        pushToast({ type: 'success', title: 'Software removed from lab' })
+      } else {
+        pushToast({ type: 'error', title: data?.error || 'Failed to remove software' })
+      }
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Connection error' })
+    }
+    setSavingLabSoftware(false)
   }
 
   const handleDeleteTestimonial = async (id) => {
@@ -650,32 +716,7 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleAdjustRewardPoints = async () => {
-    const userId = Number.parseInt(rewardAdjust.user_id, 10)
-    const delta = Number.parseInt(rewardAdjust.delta, 10)
-    if (!Number.isInteger(userId) || !Number.isInteger(delta) || delta === 0) {
-      pushToast({ type: 'warning', title: 'Valid user ID and non-zero points are required' })
-      return
-    }
-
-    try {
-      const res = await fetch('/api/rewards/adjust', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ user_id: userId, delta, reason: rewardAdjust.reason || null })
-      })
-      const data = await res.json().catch(() => null)
-      if (res.ok) {
-        setRewardAdjust({ user_id: '', delta: '', reason: '' })
-        fetchRewardsAdmin()
-        pushToast({ type: 'success', title: 'Points adjusted' })
-      } else {
-        pushToast({ type: 'error', title: data?.error || 'Failed to adjust points' })
-      }
-    } catch (e) {
-      pushToast({ type: 'error', title: 'Connection error' })
-    }
-  }
+  // (reward adjust removed — leaderboard is now session-hours based)
 
   const handleLogout = () => {
     localStorage.removeItem('token')
@@ -701,6 +742,8 @@ export default function AdminDashboard() {
   const allReservationsPage = paginateItems(reservations, tablePages.allReservations, TABLE_PAGE_SIZE)
   const testimonialsPage = paginateItems(testimonials, tablePages.testimonials, TABLE_PAGE_SIZE)
   const reportsPage = paginateItems(reportHistory, tablePages.reports, TABLE_PAGE_SIZE)
+  const selectedLab = labs.find((lab) => String(lab.id) === String(selectedLabId))
+  const selectedLabSoftware = Array.isArray(selectedLab?.softwares) ? selectedLab.softwares : []
 
   const courseBreakdown = users.reduce((acc, u) => {
     if (!u.course) return acc
@@ -813,10 +856,11 @@ export default function AdminDashboard() {
             { key: 'sitin', label: 'Sit-In Sessions', icon: <MonitorPlay size={16} /> },
             { key: 'announcements', label: 'Announcements', icon: <Bell size={16} /> },
             { key: 'reservation', label: 'Reservations', icon: <CalendarDays size={16} /> },
+            { key: 'software', label: 'Lab Software', icon: <FileText size={16} /> },
             { key: 'testimonials', label: 'Testimonials', icon: <MessageSquare size={16} /> },
             { key: 'analytics', label: 'Analytics', icon: <LineChart size={16} /> },
             { key: 'reports', label: 'Reports', icon: <FileSpreadsheet size={16} /> },
-            { key: 'rewards', label: 'Rewards', icon: <Trophy size={16} /> },
+            { key: 'rewards', label: 'Leaderboard', icon: <Trophy size={16} /> },
             { key: 'settings', label: 'Settings', icon: <Settings size={16} /> },
           ].map(t => (
             <button key={t.key} onClick={() => setActiveTab(t.key)}
@@ -1481,7 +1525,7 @@ export default function AdminDashboard() {
                 <p className="text-sm text-gray-400">Review requests, control lab PCs, and view audit logs.</p>
               </div>
               <button
-                onClick={() => { fetchReservations(); fetchManageLab() }}
+                onClick={() => { fetchReservations(); fetchManageLab(); fetchLabs() }}
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.05)]"
               >
                 Refresh
@@ -1548,6 +1592,26 @@ export default function AdminDashboard() {
                       <option key={lab.id} value={lab.id} className="bg-[#0d0d1f]">{lab.lab_name}</option>
                     ))}
                   </select>
+                </div>
+
+                <div className="mb-4 rounded-xl border border-[rgba(255,255,255,0.06)] bg-black/20 p-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs text-gray-400">Lab reservation status</div>
+                    <div className={`text-sm font-semibold ${selectedLab?.reservation_enabled ? 'text-emerald-300' : 'text-red-300'}`}>
+                      {selectedLab?.reservation_enabled ? 'Enabled' : 'Disabled'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleLabReservationToggle(!selectedLab?.reservation_enabled)}
+                    disabled={savingLabReservationToggle || !selectedLab}
+                    className={`px-3 py-2 rounded-lg text-xs font-bold border transition disabled:opacity-60 ${
+                      selectedLab?.reservation_enabled
+                        ? 'bg-red-500/15 border-red-500/40 text-red-300 hover:bg-red-500/25'
+                        : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                    }`}
+                  >
+                    {selectedLab?.reservation_enabled ? 'Disable Reservations' : 'Enable Reservations'}
+                  </button>
                 </div>
 
                 {/* Summary Counters */}
@@ -1694,26 +1758,96 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* ── LAB SOFTWARE TAB ── */}
+        {activeTab === 'software' && (
+          <div className="flex flex-col gap-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold">Lab Software Availability</h2>
+                <p className="text-sm text-gray-400">Manage software installed per laboratory.</p>
+              </div>
+              <button
+                onClick={fetchLabs}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.05)]"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div className="bento-card">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="font-bold text-lg">Software per Lab</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Students can only view this list.</p>
+                </div>
+                <select
+                  value={selectedLabId}
+                  onChange={(e) => setSelectedLabId(e.target.value)}
+                  className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs"
+                >
+                  {labs.map((lab) => (
+                    <option key={lab.id} value={lab.id} className="bg-[#0d0d1f]">{lab.lab_name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-black/20 p-3">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <p className="text-xs text-gray-400">
+                    Available software in <span className="text-gray-200 font-semibold">{selectedLab?.lab_name || 'selected lab'}</span>
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={labSoftwareInput}
+                    onChange={(e) => setLabSoftwareInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddLabSoftware() }}
+                    placeholder="e.g. Visual Studio Code"
+                    className="flex-1 bg-black/40 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+                  />
+                  <button
+                    onClick={handleAddLabSoftware}
+                    disabled={savingLabSoftware}
+                    className="px-3 py-2 rounded-lg text-xs font-bold bg-purple-500/20 border border-purple-500/40 text-purple-300 hover:bg-purple-500/30 disabled:opacity-60"
+                  >
+                    Add Software
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {selectedLabSoftware.length === 0 ? (
+                    <span className="text-xs text-gray-500">No software listed for this lab yet.</span>
+                  ) : (
+                    selectedLabSoftware.map((item) => (
+                      <span
+                        key={item.id}
+                        className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg text-xs bg-indigo-500/15 border border-indigo-500/35 text-indigo-200"
+                      >
+                        {item.software_name}
+                        <button
+                          onClick={() => handleRemoveLabSoftware(item.id)}
+                          disabled={savingLabSoftware}
+                          className="text-indigo-200/70 hover:text-red-300 transition disabled:opacity-60"
+                          title="Remove software"
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── TESTIMONIALS TAB ── */}
         {activeTab === 'testimonials' && (
           <div className="flex flex-col gap-6">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-bold">Testimonials</h2>
-                <p className="text-sm text-gray-400">Approve, reject, or remove student testimonials.</p>
-              </div>
-              <div className="flex gap-2">
-                {['all', 'pending', 'approved', 'rejected'].map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setTestimonialFilter(status)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase ${
-                      testimonialFilter === status ? 'bg-purple-500/25 border border-purple-500/40 text-purple-300' : 'bg-white/5 text-gray-400 border border-white/10'
-                    }`}
-                  >
-                    {status}
-                  </button>
-                ))}
+                <p className="text-sm text-gray-400">Testimonials are published directly by students. You can review and remove entries.</p>
               </div>
             </div>
 
@@ -1741,8 +1875,6 @@ export default function AdminDashboard() {
                         <td className="px-6 py-4 text-xs text-gray-500">{new Date(t.created_at).toLocaleString()}</td>
                         <td className="px-6 py-4">
                           <div className="flex gap-2">
-                            <button onClick={() => handleReviewTestimonial(t.id, 'approve')} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">Approve</button>
-                            <button onClick={() => handleReviewTestimonial(t.id, 'reject')} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-yellow-500/20 border border-yellow-500/40 text-yellow-300">Reject</button>
                             <button onClick={() => handleDeleteTestimonial(t.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/20 border border-red-500/40 text-red-300">Delete</button>
                           </div>
                         </td>
@@ -1903,52 +2035,71 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ── REWARDS TAB ── */}
+        {/* ── LEADERBOARD TAB ── */}
         {activeTab === 'rewards' && (
           <div className="flex flex-col gap-6">
             <div>
-              <h2 className="text-2xl font-bold">Rewards Management</h2>
-              <p className="text-sm text-gray-400">Adjust points and monitor leaderboard/history.</p>
+              <h2 className="text-2xl font-bold">Session Leaderboard</h2>
+              <p className="text-sm text-gray-400">Students ranked by total sit-in session hours this semester.</p>
             </div>
 
             <div className="bento-card">
-              <h3 className="font-bold mb-3">Adjust Student Points</h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <input value={rewardAdjust.user_id} onChange={(e) => setRewardAdjust((p) => ({ ...p, user_id: e.target.value }))} placeholder="User ID" className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm placeholder-gray-600" />
-                <input value={rewardAdjust.delta} onChange={(e) => setRewardAdjust((p) => ({ ...p, delta: e.target.value }))} placeholder="Delta (+/-)" className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm placeholder-gray-600" />
-                <input value={rewardAdjust.reason} onChange={(e) => setRewardAdjust((p) => ({ ...p, reason: e.target.value }))} placeholder="Reason (optional)" className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm placeholder-gray-600" />
-                <button onClick={handleAdjustRewardPoints} className="px-5 py-3 rounded-xl text-sm font-bold bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">Apply</button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <div className="bento-card p-0 overflow-hidden">
-                <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)] font-bold">Leaderboard</div>
-                <div className="max-h-96 overflow-y-auto">
-                  {rewardLeaderboard.map((row, idx) => (
-                    <div key={row.id} className="px-6 py-3 border-b border-[rgba(255,255,255,0.03)] flex items-center justify-between">
-                      <div className="text-sm"><span className="text-gray-500 mr-2">#{idx + 1}</span>{row.full_name}</div>
-                      <div className="text-amber-300 font-bold">{row.reward_points}</div>
-                    </div>
-                  ))}
-                  {rewardLeaderboard.length === 0 && <div className="p-6 text-sm text-gray-600">No leaderboard data.</div>}
+              <div className="flex items-center gap-3 mb-5">
+                <div className="p-1.5 rounded-lg bg-gradient-to-br from-amber-500/20 to-yellow-500/10 border border-amber-500/30">
+                  <Trophy size={16} className="text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg">Top Students by Session Hours</h3>
+                  <p className="text-xs text-gray-500">Based on completed sit-in session durations</p>
                 </div>
               </div>
-
-              <div className="bento-card p-0 overflow-hidden">
-                <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)] font-bold">Reward History</div>
-                <div className="max-h-96 overflow-y-auto">
-                  {rewardHistory.map((entry) => (
-                    <div key={entry.id} className="px-6 py-3 border-b border-[rgba(255,255,255,0.03)]">
-                      <div className="flex items-center justify-between">
-                        <div className="text-sm">{entry.full_name || `User ${entry.user_id}`}</div>
-                        <div className={`font-bold text-sm ${entry.delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{entry.delta >= 0 ? `+${entry.delta}` : entry.delta}</div>
+              <div className="space-y-2">
+                {rewardLeaderboard.map((row, idx) => {
+                  const maxMinutes = rewardLeaderboard[0]?.total_minutes || 1
+                  const barWidth = Math.max(5, (row.total_minutes / maxMinutes) * 100)
+                  const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null
+                  return (
+                    <div key={row.id} className={`flex items-center gap-3 p-3 rounded-xl border ${
+                      idx < 3 ? 'bg-amber-500/5 border-amber-500/15' : 'bg-black/20 border-[rgba(255,255,255,0.04)]'
+                    }`}>
+                      <div className="w-8 text-center shrink-0">
+                        {medal ? <span className="text-lg">{medal}</span> : <span className="text-xs text-gray-500 font-bold">#{idx + 1}</span>}
                       </div>
-                      <div className="text-xs text-gray-500">{entry.reason || 'No reason'} · {new Date(entry.created_at).toLocaleString()}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <div>
+                            <span className="text-sm font-semibold">{row.full_name}</span>
+                            {row.student_id && <span className="text-xs text-gray-500 ml-2">{row.student_id}</span>}
+                          </div>
+                          <span className="text-sm font-black text-amber-300 shrink-0 ml-2">{row.formatted_duration}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-black/30 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              idx === 0 ? 'bg-gradient-to-r from-amber-400 to-yellow-400' :
+                              idx === 1 ? 'bg-gradient-to-r from-gray-300 to-gray-400' :
+                              idx === 2 ? 'bg-gradient-to-r from-orange-500 to-amber-600' :
+                              'bg-indigo-500/60'
+                            }`}
+                            style={{ width: `${barWidth}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-[10px] text-gray-500">{row.total_sessions} session{row.total_sessions !== 1 ? 's' : ''}</span>
+                          <span className="text-[10px] text-gray-600">•</span>
+                          <span className="text-[10px] text-gray-500">{row.total_hours}h total</span>
+                          {row.course && <><span className="text-[10px] text-gray-600">•</span><span className="text-[10px] text-gray-600">{row.course}</span></>}
+                        </div>
+                      </div>
                     </div>
-                  ))}
-                  {rewardHistory.length === 0 && <div className="p-6 text-sm text-gray-600">No reward history yet.</div>}
-                </div>
+                  )
+                })}
+                {rewardLeaderboard.length === 0 && (
+                  <div className="text-center py-12">
+                    <Trophy size={36} className="mx-auto mb-3 text-gray-700" />
+                    <p className="text-sm text-gray-500">No completed sessions yet. Session data will appear here once students complete sit-ins.</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -2066,6 +2217,7 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+      <AIChatbot />
     </div>
   )
 }

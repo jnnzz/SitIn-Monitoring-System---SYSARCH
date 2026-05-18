@@ -42,6 +42,25 @@ export async function GET(request, { params }) {
   await ensureMigrations()
 
   const parts = await routeParts(params)
+  if (parts.length === 1 && parts[0] === 'public') {
+    const limit = parseLimit(request.nextUrl.searchParams.get('limit'), 12, 40)
+    try {
+      const result = await pool.query(
+        `SELECT t.id, t.content, t.rating, t.created_at, u.full_name
+         FROM testimonials t
+         LEFT JOIN users u ON u.id = t.user_id
+         WHERE t.status = 'approved'
+         ORDER BY t.updated_at DESC, t.created_at DESC
+         LIMIT $1`,
+        [limit]
+      )
+      return NextResponse.json(result.rows)
+    } catch (error) {
+      console.error(error)
+      return NextResponse.json({ error: 'Failed to fetch public testimonials' }, { status: 500 })
+    }
+  }
+
   const auth = authenticateRequest(request)
   if (auth.response) return auth.response
 
@@ -125,7 +144,7 @@ export async function POST(request, { params }) {
   try {
     const result = await pool.query(
       `INSERT INTO testimonials (user_id, content, rating, status)
-       VALUES ($1, $2, $3, 'pending')
+       VALUES ($1, $2, $3, 'approved')
        RETURNING *`,
       [auth.user.userId, content, rating]
     )
