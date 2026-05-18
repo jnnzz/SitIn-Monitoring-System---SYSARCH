@@ -175,6 +175,9 @@ export default function StudentDashboard() {
   const [reservationPurpose, setReservationPurpose] = useState('')
   const [confirmReservationModal, setConfirmReservationModal] = useState(null)
 
+  // Testimonials
+  const [testimonialForm, setTestimonialForm] = useState({ content: '', rating: 5 })
+
   // Leaderboard
   const [sessionStats, setSessionStats] = useState({ total_sessions: 0, total_minutes: 0, total_hours: 0, formatted_duration: '0m', recent_sessions: [] })
   const [leaderboard, setLeaderboard] = useState([])
