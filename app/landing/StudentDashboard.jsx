@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { LogOut, User, Bell, BookOpen, History, Star, ChevronRight, X, MessageSquare, CheckCheck, Clock, Monitor, BookMarked, Zap, TrendingDown, CalendarDays, Trophy, Award } from 'lucide-react'
+import { LogOut, User, Bell, BookOpen, History, Star, ChevronRight, X, MessageSquare, CheckCheck, Clock, Monitor, BookMarked, Zap, TrendingDown, CalendarDays, Trophy, Award, Lock, Wrench } from 'lucide-react'
 import Image from 'next/image'
 import ccs from '../assets/ccslogo.png'
 import { ToastStack } from '@/components/ui/toast-stack'
@@ -634,9 +634,27 @@ export default function StudentDashboard() {
   const myReservationsPage = paginateItems(myReservations, tablePages.myReservations, TABLE_PAGE_SIZE)
   // leaderboard has no pagination needed
   const selectedLab = labs.find((lab) => String(lab.id) === String(selectedLabId))
-  const selectedLabSoftware = Array.isArray(selectedLab?.softwares) ? selectedLab.softwares : []
   const selectedLabReservationEnabled = selectedLab?.reservation_enabled !== false
   const selectedLabRecommendation = reservationRecommendations.find((item) => String(item.lab_id) === String(selectedLabId))
+  const totalSoftwareEntries = labs.reduce((sum, lab) => {
+    const count = Array.isArray(lab.softwares) ? lab.softwares.length : 0
+    return sum + count
+  }, 0)
+  const labsWithSoftware = labs.filter((lab) => Array.isArray(lab.softwares) && lab.softwares.length > 0).length
+  const largestSoftwareCount = labs.reduce((max, lab) => {
+    const count = Array.isArray(lab.softwares) ? lab.softwares.length : 0
+    return Math.max(max, count)
+  }, 0)
+  const getReservationStatusBadgeClass = (status) => {
+    const key = String(status || '').toLowerCase()
+    if (key === 'pending') return 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+    if (key === 'approved') return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+    if (key === 'reserved') return 'bg-orange-500/20 text-orange-300 border border-orange-500/40'
+    if (key === 'declined') return 'bg-red-500/20 text-red-300 border border-red-500/40'
+    if (key === 'cancelled') return 'bg-gray-500/20 text-gray-300 border border-gray-500/40'
+    if (key === 'completed') return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+    return 'bg-zinc-500/20 text-zinc-300 border border-zinc-500/40'
+  }
 
   const tabs = [
     { key: 'dashboard', label: 'Overview', icon: <User size={15} /> },
@@ -1450,8 +1468,18 @@ export default function StudentDashboard() {
                 <div className="bento-card">
                   <div className="flex items-center justify-between mb-5">
                     <div>
-                      <h3 className="font-bold text-lg">Computer Availability</h3>
+                      <h3 className="font-bold text-lg flex items-center gap-2">
+                        <Monitor size={18} className="text-indigo-300" />
+                        Computer Availability
+                      </h3>
                       <p className="text-xs text-gray-500 mt-0.5">Select an available PC to reserve</p>
+                      <div
+                        className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold"
+                        style={{ background: 'rgba(59,130,246,0.12)', borderColor: 'rgba(59,130,246,0.30)', color: '#93c5fd' }}
+                      >
+                        <Monitor size={12} />
+                        {selectedLab?.lab_name ? `Laboratory: ${selectedLab.lab_name}` : 'Laboratory: Not selected'}
+                      </div>
                     </div>
                     <button
                       onClick={fetchLabComputers}
@@ -1469,26 +1497,58 @@ export default function StudentDashboard() {
                     const offlineCount = labComputers.filter(c => c.display_status === 'maintenance').length;
                     return (
                       <div className="flex flex-wrap gap-2 mb-5">
-                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/8 border border-emerald-500/20">
-                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)] animate-pulse" />
-                          <span className="text-[11px] font-bold text-emerald-400">{availCount} Available</span>
+                        <div
+                          className="flex items-center gap-2 px-3 py-2 rounded-lg border"
+                          style={{ background: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.28)' }}
+                        >
+                          <div
+                            className="p-1 rounded-md border"
+                            style={{ background: 'rgba(16,185,129,0.16)', borderColor: 'rgba(16,185,129,0.35)' }}
+                          >
+                            <Monitor size={11} style={{ color: '#86efac' }} />
+                          </div>
+                          <span className="text-[11px] font-bold" style={{ color: '#86efac' }}>{availCount} Available</span>
                         </div>
                         {mineCount > 0 && (
-                          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20">
-                            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.5)]" />
-                            <span className="text-[11px] font-bold text-amber-400">{mineCount} Your Reservation</span>
+                          <div
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg border"
+                            style={{ background: 'rgba(245,158,11,0.08)', borderColor: 'rgba(245,158,11,0.28)' }}
+                          >
+                            <div
+                              className="p-1 rounded-md border"
+                              style={{ background: 'rgba(245,158,11,0.16)', borderColor: 'rgba(245,158,11,0.35)' }}
+                            >
+                              <Star size={11} style={{ color: '#fcd34d', fill: '#fcd34d' }} />
+                            </div>
+                            <span className="text-[11px] font-bold" style={{ color: '#fcd34d' }}>{mineCount} Your Reservation</span>
                           </div>
                         )}
                         {reservedCount > 0 && (
-                          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/8 border border-red-500/20">
-                            <div className="w-2.5 h-2.5 rounded-full bg-red-400 shadow-[0_0_6px_rgba(239,68,68,0.5)]" />
-                            <span className="text-[11px] font-bold text-red-400">{reservedCount} Taken</span>
+                          <div
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg border"
+                            style={{ background: 'rgba(239,68,68,0.09)', borderColor: 'rgba(239,68,68,0.30)' }}
+                          >
+                            <div
+                              className="p-1 rounded-md border"
+                              style={{ background: 'rgba(239,68,68,0.16)', borderColor: 'rgba(239,68,68,0.35)' }}
+                            >
+                              <Lock size={11} style={{ color: '#fca5a5' }} />
+                            </div>
+                            <span className="text-[11px] font-bold" style={{ color: '#fca5a5' }}>{reservedCount} Taken</span>
                           </div>
                         )}
                         {offlineCount > 0 && (
-                          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-500/8 border border-gray-500/20">
-                            <div className="w-2.5 h-2.5 rounded-full bg-gray-500" />
-                            <span className="text-[11px] font-bold text-gray-500">{offlineCount} Offline</span>
+                          <div
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg border"
+                            style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.24)' }}
+                          >
+                            <div
+                              className="p-1 rounded-md border"
+                              style={{ background: 'rgba(239,68,68,0.14)', borderColor: 'rgba(239,68,68,0.30)' }}
+                            >
+                              <Wrench size={11} style={{ color: '#fca5a5' }} />
+                            </div>
+                            <span className="text-[11px] font-bold" style={{ color: '#fca5a5' }}>{offlineCount} Offline</span>
                           </div>
                         )}
                       </div>
@@ -1502,23 +1562,45 @@ export default function StudentDashboard() {
                       const isReserved = computer.display_status === 'reserved';
                       const isMaintenance = computer.display_status === 'maintenance';
                       const isAvailableForBooking = isAvailable && selectedLabReservationEnabled;
+                      const isUnavailable = !isAvailableForBooking && !isMine
+                      const tileStyle = isAvailableForBooking
+                        ? {
+                            background: 'linear-gradient(to bottom, rgba(16,185,129,0.16), rgba(6,95,70,0.18))',
+                            borderColor: 'rgba(16,185,129,0.45)',
+                            color: '#a7f3d0',
+                            opacity: 1,
+                          }
+                        : isMine
+                          ? {
+                              background: 'linear-gradient(to bottom, rgba(245,158,11,0.16), rgba(180,83,9,0.16))',
+                              borderColor: 'rgba(245,158,11,0.45)',
+                              color: '#fde68a',
+                              opacity: 1,
+                            }
+                          : {
+                              background: 'linear-gradient(to bottom, rgba(239,68,68,0.14), rgba(127,29,29,0.16))',
+                              borderColor: 'rgba(239,68,68,0.40)',
+                              color: '#fecaca',
+                              opacity: isAvailable ? 0.92 : 0.85,
+                            }
+                      const iconFrameStyle = isAvailableForBooking
+                        ? { background: 'rgba(16,185,129,0.16)', borderColor: 'rgba(16,185,129,0.45)' }
+                        : isMine
+                          ? { background: 'rgba(245,158,11,0.18)', borderColor: 'rgba(245,158,11,0.45)' }
+                          : { background: 'rgba(239,68,68,0.16)', borderColor: 'rgba(239,68,68,0.40)' }
+                      const dotStyle = isAvailableForBooking
+                        ? { background: '#34d399', boxShadow: '0 0 6px rgba(52,211,153,0.6)' }
+                        : isMine
+                          ? { background: '#fbbf24', boxShadow: '0 0 6px rgba(251,191,36,0.55)' }
+                          : { background: '#f87171', boxShadow: '0 0 6px rgba(248,113,113,0.45)' }
                       const clickable = isAvailableForBooking;
                       return (
                         <button
                           key={computer.id}
                           onClick={() => clickable && handleCreateReservation(computer)}
                           disabled={!clickable}
-                          className={`group relative rounded-xl text-xs border-2 transition-all duration-200 flex flex-col items-center justify-center gap-1 min-h-[68px] ${
-                            isAvailableForBooking
-                              ? 'bg-gradient-to-b from-emerald-500/15 to-emerald-900/10 border-emerald-500/40 text-emerald-300 hover:border-emerald-400/70 hover:shadow-[0_0_18px_rgba(52,211,153,0.2)] hover:scale-[1.06] cursor-pointer'
-                              : isAvailable
-                                ? 'bg-gradient-to-b from-gray-800/60 to-gray-900/60 border-gray-600/30 text-gray-500 cursor-not-allowed opacity-60'
-                              : isMine
-                                ? 'bg-gradient-to-b from-amber-500/15 to-amber-900/15 border-amber-500/50 text-amber-300 cursor-default'
-                                : isReserved
-                                  ? 'bg-gradient-to-b from-red-500/10 to-red-900/10 border-red-500/35 text-red-400/80 cursor-not-allowed opacity-75'
-                                  : 'bg-gradient-to-b from-gray-800/60 to-gray-900/60 border-gray-600/30 text-gray-500 cursor-not-allowed opacity-60'
-                          }`}
+                          className={`group relative rounded-xl text-xs border-2 transition-all duration-200 flex flex-col items-center justify-center gap-1.5 min-h-[78px] ${clickable ? 'hover:scale-[1.06] cursor-pointer' : 'cursor-not-allowed'}`}
+                          style={tileStyle}
                           title={`PC ${computer.computer_number} — ${
                             isAvailableForBooking ? 'Available – click to reserve' 
                             : isAvailable ? 'Available but reservations are disabled for this lab'
@@ -1528,27 +1610,31 @@ export default function StudentDashboard() {
                           }`}
                         >
                           {/* Status indicator dot */}
-                          <div className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${
-                            isAvailableForBooking ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)] animate-pulse'
-                            : isAvailable ? 'bg-gray-600'
-                            : isMine ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]'
-                            : isReserved ? 'bg-red-400/80'
-                            : 'bg-gray-600'
-                          }`} />
+                          <div className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${isAvailableForBooking ? 'animate-pulse' : ''}`} style={dotStyle} />
 
                           {/* Icon */}
-                          <div className={`text-sm ${isMaintenance ? 'opacity-40' : ''}`}>
-                            {isAvailable ? '🖥️' : isMine ? '⭐' : isReserved ? '🔒' : '🔧'}
+                          <div className="p-1.5 rounded-md border" style={iconFrameStyle}>
+                            {isAvailable ? (
+                              <Monitor size={15} style={{ color: isAvailableForBooking ? '#a7f3d0' : '#fca5a5' }} />
+                            ) : isMine ? (
+                              <Star size={15} style={{ color: '#fde68a', fill: '#fde68a' }} />
+                            ) : isReserved ? (
+                              <Lock size={15} style={{ color: '#fca5a5' }} />
+                            ) : (
+                              <Wrench size={15} style={{ color: '#fca5a5' }} />
+                            )}
                           </div>
 
                           <span className="font-bold text-[11px] leading-none">PC {computer.computer_number}</span>
 
                           {/* Sub-label */}
                           {isMine && (
-                            <span className="text-[9px] leading-tight text-amber-300/80 font-medium">Yours</span>
+                            <span className="text-[9px] leading-tight font-medium" style={{ color: '#fde68a' }}>Yours</span>
                           )}
-                          {isMaintenance && (
-                            <span className="text-[9px] leading-tight text-gray-500 font-medium">Offline</span>
+                          {isUnavailable && (
+                            <span className="text-[9px] leading-tight font-medium" style={{ color: '#fca5a5' }}>
+                              {isMaintenance ? 'Offline' : 'Unavailable'}
+                            </span>
                           )}
                         </button>
                       )
@@ -1584,7 +1670,7 @@ export default function StudentDashboard() {
                             <td className="px-6 py-4 text-sm text-gray-400">{item.date}</td>
                             <td className="px-6 py-4 text-sm text-gray-400">{item.time_slot}</td>
                             <td className="px-6 py-4">
-                              <span className="px-2 py-1 rounded text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40 uppercase">
+                              <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${getReservationStatusBadgeClass(item.status)}`}>
                                 {item.status}
                               </span>
                             </td>
@@ -1621,7 +1707,7 @@ export default function StudentDashboard() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-bold">Laboratory Software</h2>
-                <p className="text-sm text-gray-400">View available software per laboratory.</p>
+                <p className="text-sm text-gray-400">Software apps grouped by laboratory cards.</p>
               </div>
               <button
                 onClick={fetchLabs}
@@ -1631,46 +1717,103 @@ export default function StudentDashboard() {
               </button>
             </div>
 
-            <div className="bento-card">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-                <div>
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-2">Select Laboratory</label>
-                  <select
-                    value={selectedLabId}
-                    onChange={(e) => setSelectedLabId(e.target.value)}
-                    className="w-full bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500/50"
-                  >
-                    {labs.map((lab) => (
-                      <option key={lab.id} value={lab.id} className="bg-[#0d0d1f]">{lab.lab_name}</option>
-                    ))}
-                  </select>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bento-card py-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Monitor size={14} className="text-indigo-300" />
+                  <div className="text-xs text-gray-500 uppercase tracking-wider font-bold">Total Labs</div>
                 </div>
-                <div className="text-sm text-gray-400">
-                  {selectedLab?.lab_name ? (
-                    <>Showing software in <span className="text-white font-semibold">{selectedLab.lab_name}</span></>
-                  ) : (
-                    'Select a lab to view software.'
-                  )}
-                </div>
+                <div className="text-2xl font-black mt-1">{labs.length}</div>
               </div>
-
-              <div className="mt-5 rounded-xl border border-[rgba(255,255,255,0.06)] bg-black/20 p-4">
-                <div className="flex flex-wrap gap-2">
-                  {selectedLabSoftware.length === 0 ? (
-                    <span className="text-sm text-gray-500">No software listed for this laboratory yet.</span>
-                  ) : (
-                    selectedLabSoftware.map((item) => (
-                      <span
-                        key={item.id}
-                        className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs bg-indigo-500/15 border border-indigo-500/35 text-indigo-200"
-                      >
-                        {item.software_name}
-                      </span>
-                    ))
-                  )}
+              <div className="bento-card py-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <BookOpen size={14} className="text-indigo-300" />
+                  <div className="text-xs text-gray-500 uppercase tracking-wider font-bold">Software Entries</div>
                 </div>
+                <div className="text-2xl font-black mt-1">{totalSoftwareEntries}</div>
+              </div>
+              <div className="bento-card py-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <CheckCheck size={14} className="text-emerald-300" />
+                  <div className="text-xs text-gray-500 uppercase tracking-wider font-bold">Labs with Software</div>
+                </div>
+                <div className="text-2xl font-black mt-1">{labsWithSoftware}</div>
+              </div>
+              <div className="bento-card py-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Award size={14} className="text-amber-300" />
+                  <div className="text-xs text-gray-500 uppercase tracking-wider font-bold">Most in One Lab</div>
+                </div>
+                <div className="text-2xl font-black mt-1">{largestSoftwareCount}</div>
               </div>
             </div>
+
+            {labs.length === 0 ? (
+              <div className="bento-card text-center py-10 text-gray-500">
+                <BookOpen size={38} className="mx-auto mb-3 opacity-30" />
+                No laboratories found.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+                {labs.map((lab) => {
+                  const softwareItems = Array.isArray(lab.softwares) ? lab.softwares : []
+                  const isSelected = String(selectedLabId) === String(lab.id)
+
+                  return (
+                    <div
+                      key={lab.id}
+                      className={`bento-card p-5 ${isSelected ? 'ring-1 ring-purple-500/50' : ''}`}
+                      onClick={() => setSelectedLabId(String(lab.id))}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <div>
+                          <h3 className="font-bold text-base flex items-center gap-2">
+                            <Monitor size={15} className="text-indigo-300" />
+                            {lab.lab_name}
+                          </h3>
+                          <p className="text-xs text-gray-500 mt-0.5">Available software</p>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-indigo-500/15 border border-indigo-500/35 text-indigo-200">
+                            <BookOpen size={11} />
+                            {softwareItems.length} app{softwareItems.length !== 1 ? 's' : ''}
+                          </span>
+                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
+                            lab.reservation_enabled === false
+                              ? 'bg-red-500/10 border-red-500/30 text-red-300'
+                              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                          }`}>
+                            <CalendarDays size={11} />
+                            {lab.reservation_enabled === false ? 'Reservations Off' : 'Reservations On'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-black/20 p-3 min-h-[90px]">
+                        <div className="flex flex-wrap gap-2">
+                          {softwareItems.length === 0 ? (
+                            <span className="text-xs text-gray-500 inline-flex items-center gap-1.5">
+                              <BookOpen size={12} />
+                              No software listed for this laboratory yet.
+                            </span>
+                          ) : (
+                            softwareItems.map((item) => (
+                              <span
+                                key={item.id}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-indigo-500/15 border border-indigo-500/35 text-indigo-200"
+                              >
+                                <BookMarked size={12} className="text-indigo-300" />
+                                {item.software_name}
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 

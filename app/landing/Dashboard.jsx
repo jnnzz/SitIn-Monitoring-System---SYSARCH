@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { LogOut, Users, Bell, Settings, Trash2, Plus, X, BarChart3, TrendingUp, Shield, RefreshCw, MonitorPlay, Search, Clock, CheckCircle2, Star, MessageSquare, CalendarDays, Trophy, FileSpreadsheet, FileText, LineChart } from 'lucide-react'
+import { LogOut, Users, Bell, Settings, Trash2, Plus, X, BarChart3, TrendingUp, Shield, RefreshCw, MonitorPlay, Search, Clock, CheckCircle2, Star, MessageSquare, CalendarDays, Trophy, FileSpreadsheet, FileText, LineChart, Monitor, Lock, Wrench } from 'lucide-react'
 import Image from 'next/image'
 import ccs from '../assets/ccslogo.png'
 import { ToastStack } from '@/components/ui/toast-stack'
@@ -65,6 +65,12 @@ function DonutChart({ segments }) {
   )
 }
 
+function formatMinutesCompact(minutes) {
+  const safe = Number.isFinite(minutes) ? Math.max(0, Math.round(minutes)) : 0
+  if (safe >= 60) return `${Math.floor(safe / 60)}h ${safe % 60}m`
+  return `${safe}m`
+}
+
 export default function AdminDashboard() {
   const router = useRouter()
   const [user, setUser] = useState(null)
@@ -107,7 +113,7 @@ export default function AdminDashboard() {
   const [labs, setLabs] = useState([])
   const [selectedLabId, setSelectedLabId] = useState('')
   const [manageLabComputers, setManageLabComputers] = useState([])
-  const [labSoftwareInput, setLabSoftwareInput] = useState('')
+  const [labSoftwareInputs, setLabSoftwareInputs] = useState({})
   const [savingLabSoftware, setSavingLabSoftware] = useState(false)
   const [savingLabReservationToggle, setSavingLabReservationToggle] = useState(false)
 
@@ -586,10 +592,12 @@ export default function AdminDashboard() {
     setSavingLabReservationToggle(false)
   }
 
-  const handleAddLabSoftware = async () => {
-    const softwareName = labSoftwareInput.trim()
-    if (!selectedLabId) {
-      pushToast({ type: 'warning', title: 'Please select a lab first' })
+  const handleAddLabSoftware = async (labId, providedName) => {
+    const targetLabId = String(labId || selectedLabId || '')
+    const softwareName = String(providedName ?? labSoftwareInputs[targetLabId] ?? '').trim()
+
+    if (!targetLabId) {
+      pushToast({ type: 'warning', title: 'Missing laboratory reference' })
       return
     }
     if (!softwareName) {
@@ -599,14 +607,14 @@ export default function AdminDashboard() {
 
     setSavingLabSoftware(true)
     try {
-      const res = await fetch(`/api/reservations/lab/${selectedLabId}/software`, {
+      const res = await fetch(`/api/reservations/lab/${targetLabId}/software`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify({ software_name: softwareName })
       })
       const data = await res.json().catch(() => null)
       if (res.ok) {
-        setLabSoftwareInput('')
+        setLabSoftwareInputs((prev) => ({ ...prev, [targetLabId]: '' }))
         await fetchLabs()
         pushToast({ type: 'success', title: 'Software added to lab' })
       } else {
@@ -618,11 +626,12 @@ export default function AdminDashboard() {
     setSavingLabSoftware(false)
   }
 
-  const handleRemoveLabSoftware = async (softwareId) => {
-    if (!selectedLabId) return
+  const handleRemoveLabSoftware = async (softwareId, labId) => {
+    const targetLabId = String(labId || selectedLabId || '')
+    if (!targetLabId) return
     setSavingLabSoftware(true)
     try {
-      const res = await fetch(`/api/reservations/lab/${selectedLabId}/software/${softwareId}`, {
+      const res = await fetch(`/api/reservations/lab/${targetLabId}/software/${softwareId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${getToken()}` }
       })
@@ -743,7 +752,42 @@ export default function AdminDashboard() {
   const testimonialsPage = paginateItems(testimonials, tablePages.testimonials, TABLE_PAGE_SIZE)
   const reportsPage = paginateItems(reportHistory, tablePages.reports, TABLE_PAGE_SIZE)
   const selectedLab = labs.find((lab) => String(lab.id) === String(selectedLabId))
-  const selectedLabSoftware = Array.isArray(selectedLab?.softwares) ? selectedLab.softwares : []
+  const sitinTotalMinutes = sitinRecords.reduce((sum, row) => sum + (row.duration_minutes || 0), 0)
+  const sitinUniqueStudents = new Set(sitinRecords.map((row) => row.student_id)).size
+  const sitinRatedSessions = sitinRecords.filter((row) => Number(row.rating) > 0)
+  const sitinAverageRating = sitinRatedSessions.length
+    ? (sitinRatedSessions.reduce((sum, row) => sum + Number(row.rating || 0), 0) / sitinRatedSessions.length).toFixed(1)
+    : '—'
+  const reservationStatusCounts = reservations.reduce((acc, row) => {
+    const key = String(row.status || 'unknown').toLowerCase()
+    acc[key] = (acc[key] || 0) + 1
+    return acc
+  }, {})
+  const getReservationStatusBadgeClass = (status) => {
+    const key = String(status || '').toLowerCase()
+    if (key === 'pending') return 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+    if (key === 'approved') return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+    if (key === 'reserved') return 'bg-orange-500/20 text-orange-300 border border-orange-500/40'
+    if (key === 'declined') return 'bg-red-500/20 text-red-300 border border-red-500/40'
+    if (key === 'cancelled') return 'bg-gray-500/20 text-gray-300 border border-gray-500/40'
+    if (key === 'completed') return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+    return 'bg-zinc-500/20 text-zinc-300 border border-zinc-500/40'
+  }
+  const totalSoftwareEntries = labs.reduce((sum, lab) => {
+    const items = Array.isArray(lab.softwares) ? lab.softwares.length : 0
+    return sum + items
+  }, 0)
+  const labsWithSoftware = labs.filter((lab) => Array.isArray(lab.softwares) && lab.softwares.length > 0).length
+  const largestSoftwareCount = labs.reduce((max, lab) => {
+    const count = Array.isArray(lab.softwares) ? lab.softwares.length : 0
+    return Math.max(max, count)
+  }, 0)
+  const labsNeedingSoftware = Math.max(0, labs.length - labsWithSoftware)
+  const reportCsvCount = reportHistory.filter((item) => String(item.format).toLowerCase() === 'csv').length
+  const reportPdfCount = reportHistory.filter((item) => String(item.format).toLowerCase() === 'pdf').length
+  const latestReportDate = reportHistory.length > 0
+    ? new Date(reportHistory[0].created_at).toLocaleString()
+    : 'No reports yet'
 
   const courseBreakdown = users.reduce((acc, u) => {
     if (!u.course) return acc
@@ -806,6 +850,110 @@ export default function AdminDashboard() {
 
         .user-row { transition: background 0.15s; }
         .user-row:hover { background: rgba(255,255,255,0.03); }
+
+        .admin-modern-shell { display: flex; flex-direction: column; gap: 1.25rem; }
+        .admin-modern-hero {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 1rem;
+          flex-wrap: wrap;
+        }
+        .admin-modern-title {
+          font-size: clamp(1.5rem, 2.2vw, 2rem);
+          font-weight: 800;
+          letter-spacing: -0.02em;
+          color: var(--app-fg);
+        }
+        .admin-modern-subtitle {
+          margin-top: 0.3rem;
+          font-size: 0.83rem;
+          color: var(--app-muted);
+        }
+        .admin-modern-refresh {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.45rem;
+          padding: 0.55rem 0.95rem;
+          border-radius: 999px;
+          font-size: 0.72rem;
+          font-weight: 700;
+          border: 1px solid var(--app-border);
+          background: color-mix(in srgb, var(--app-surface) 84%, #0f2869 16%);
+          color: var(--app-fg);
+          transition: 0.2s ease;
+        }
+        .admin-modern-refresh:hover { border-color: var(--app-accent); box-shadow: 0 10px 20px var(--app-accent-soft); }
+        .admin-modern-stat-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+          gap: 0.9rem;
+        }
+        .admin-modern-stat-card {
+          position: relative;
+          overflow: hidden;
+          border-radius: 20px;
+          border: 1px solid var(--app-border);
+          background: linear-gradient(145deg, color-mix(in srgb, var(--app-surface) 82%, #0a1f5f 18%), var(--app-surface));
+          padding: 1rem;
+          box-shadow: var(--app-shadow);
+        }
+        .admin-modern-stat-card::after {
+          content: '';
+          position: absolute;
+          right: -16px;
+          top: -18px;
+          width: 74px;
+          height: 74px;
+          border-radius: 999px;
+          border: 1px solid color-mix(in srgb, var(--app-border) 40%, var(--app-accent) 60%);
+          opacity: 0.45;
+        }
+        .admin-modern-stat-icon {
+          width: 2.3rem;
+          height: 2.3rem;
+          border-radius: 0.85rem;
+          border: 1px solid color-mix(in srgb, var(--app-accent) 45%, var(--app-border) 55%);
+          background: color-mix(in srgb, var(--app-accent-soft) 55%, transparent 45%);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--app-accent);
+          margin-bottom: 0.75rem;
+        }
+        .admin-modern-stat-value { font-size: clamp(1.35rem, 1.8vw, 2rem); font-weight: 800; line-height: 1.1; color: var(--app-fg); }
+        .admin-modern-stat-label {
+          margin-top: 0.4rem;
+          color: var(--app-muted);
+          font-size: 0.68rem;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          font-weight: 700;
+        }
+        .admin-modern-subtabs {
+          display: flex;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+          border: 1px solid var(--app-border);
+          background: color-mix(in srgb, var(--app-surface) 88%, #0f235f 12%);
+          border-radius: 14px;
+          padding: 0.35rem;
+          width: fit-content;
+        }
+        .admin-modern-table {
+          border-radius: 22px;
+          border: 1px solid var(--app-border);
+          background: color-mix(in srgb, var(--app-surface) 90%, #0f214e 10%);
+          box-shadow: var(--app-shadow);
+          overflow: hidden;
+        }
+        .admin-modern-table-head {
+          padding: 1rem 1.3rem;
+          border-bottom: 1px solid var(--app-border);
+          font-weight: 700;
+          color: var(--app-fg);
+          background: color-mix(in srgb, var(--app-surface) 84%, #122d72 16%);
+        }
 
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -1088,14 +1236,21 @@ export default function AdminDashboard() {
 
         {/* ── SIT-IN TAB ── */}
         {activeTab === 'sitin' && (
-          <div className="flex flex-col gap-6">
+          <div className="admin-modern-shell">
             {/* Header + sub-nav */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="admin-modern-hero">
               <div>
-                <h2 className="text-2xl font-bold">Sit-In Session Management</h2>
-                <p className="text-sm text-gray-400">{activeSessions.length} active session{activeSessions.length !== 1 ? 's' : ''}</p>
+                <h2 className="admin-modern-title">Sit-In Sessions</h2>
+                <p className="admin-modern-subtitle">{activeSessions.length} active session{activeSessions.length !== 1 ? 's' : ''} · operations and history</p>
               </div>
-              <div className="flex gap-2 bg-black/20 p-1 rounded-xl border border-[rgba(255,255,255,0.05)]">
+              <button
+                onClick={() => { fetchActiveSessions(); fetchRecords() }}
+                className="admin-modern-refresh"
+              >
+                <RefreshCw size={13} /> Refresh
+              </button>
+            </div>
+              <div className="admin-modern-subtabs">
                 {[
                   { key: 'search', label: 'Search Student', icon: <Search size={14} /> },
                   { key: 'active', label: `Active (${activeSessions.length})`, icon: <Clock size={14} /> },
@@ -1104,33 +1259,37 @@ export default function AdminDashboard() {
                   <button key={v.key} onClick={() => setSitinView(v.key)}
                     className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold transition ${
                       sitinView === v.key 
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 ring-1 ring-blue-500/50' 
+                        ? 'bg-[color:var(--app-accent)] text-[color:var(--app-on-accent)] shadow-lg ring-1'
                         : 'text-gray-400 hover:bg-white/5 hover:text-white'
                     }`}>
                     {v.icon} {v.label}
                   </button>
                 ))}
               </div>
-            </div>
 
             {/* ── SEARCH VIEW ── */}
             {sitinView === 'search' && (
               <div className="flex flex-col gap-4">
-                <div className="bento-card">
+                <div className="admin-modern-table p-5">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-3">Search Student by Name or ID</label>
                   <div className="relative">
                     <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
                     <input
                       type="text" placeholder="e.g. Juan Dela Cruz or 2023-00001"
                       value={sitinSearch} onChange={e => handleSitinSearch(e.target.value)}
-                      className="w-full bg-black/30 border border-[rgba(255,255,255,0.05)] rounded-xl pl-11 pr-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-red-500/50 transition"
+                      className="w-full rounded-xl border pl-11 pr-4 py-3 text-sm transition focus:outline-none"
+                      style={{
+                        backgroundColor: 'var(--app-surface-2)',
+                        borderColor: 'var(--app-border)',
+                        color: 'var(--app-fg)',
+                      }}
                     />
                   </div>
                 </div>
 
                 {/* Results */}
                 {sitinResults.length > 0 && (
-                  <div className="bento-card p-0 overflow-hidden">
+                  <div className="admin-modern-table p-0 overflow-hidden">
                     <table className="w-full">
                       <thead>
                         <tr className="border-b border-[rgba(255,255,255,0.05)]">
@@ -1183,7 +1342,7 @@ export default function AdminDashboard() {
                   </div>
                 )}
                 {sitinSearch && sitinResults.length === 0 && (
-                  <div className="bento-card text-center py-10 text-gray-600">
+                  <div className="admin-modern-table text-center py-10 text-gray-600">
                     <Users size={40} className="mx-auto mb-3 opacity-20" />
                     <p>No students found for "{sitinSearch}"</p>
                   </div>
@@ -1195,11 +1354,11 @@ export default function AdminDashboard() {
             {sitinView === 'active' && (
               <div className="flex flex-col gap-4">
                 <div className="flex justify-end">
-                  <button onClick={fetchActiveSessions} className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.05)] transition text-gray-300">
+                  <button onClick={fetchActiveSessions} className="admin-modern-refresh">
                     <RefreshCw size={13} /> Refresh
                   </button>
                 </div>
-                <div className="bento-card p-0 overflow-hidden">
+                <div className="admin-modern-table p-0 overflow-hidden">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-[rgba(255,255,255,0.05)]">
@@ -1286,63 +1445,40 @@ export default function AdminDashboard() {
             )}
 
             {/* ── RECORDS VIEW ── */}
-            {sitinView === 'records' && (() => {
-              const totalSessions = sitinRecords.length;
-              const totalMins = sitinRecords.reduce((sum, r) => sum + (r.duration_minutes || 0), 0);
-              const totalHoursText = totalMins >= 60 ? `${Math.floor(totalMins / 60)}h ${totalMins % 60}m` : `${totalMins}m`;
-              const uniqueStudents = new Set(sitinRecords.map(r => r.student_id)).size;
-              const ratedSessions = sitinRecords.filter(r => r.rating > 0);
-              const avgRating = ratedSessions.length > 0 
-                ? (ratedSessions.reduce((sum, r) => sum + r.rating, 0) / ratedSessions.length).toFixed(1)
-                : '—';
-
-              return (
+            {sitinView === 'records' && (
               <div className="flex flex-col gap-4">
                 
                 {/* Analytics Snapshot Row */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="bento-card py-4 flex flex-col items-center justify-center bg-gradient-to-b from-emerald-500/10 to-transparent border-t-emerald-500/30">
-                    <div className="flex items-center gap-2 text-emerald-400 mb-1">
-                      <CheckCircle2 size={16} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">Total Sessions</span>
-                    </div>
-                    <div className="text-2xl font-black text-white">{totalSessions}</div>
+                <div className="admin-modern-stat-grid">
+                  <div className="admin-modern-stat-card">
+                    <div className="admin-modern-stat-icon"><CheckCircle2 size={16} /></div>
+                    <div className="admin-modern-stat-value">{sitinRecords.length}</div>
+                    <div className="admin-modern-stat-label">Number of Sessions</div>
                   </div>
-                  
-                  <div className="bento-card py-4 flex flex-col items-center justify-center bg-gradient-to-b from-blue-500/10 to-transparent border-t-blue-500/30">
-                    <div className="flex items-center gap-2 text-blue-400 mb-1">
-                      <Clock size={16} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">Time Logged</span>
-                    </div>
-                    <div className="text-xl font-black text-white">{totalHoursText}</div>
+                  <div className="admin-modern-stat-card">
+                    <div className="admin-modern-stat-icon"><Clock size={16} /></div>
+                    <div className="admin-modern-stat-value">{formatMinutesCompact(sitinTotalMinutes)}</div>
+                    <div className="admin-modern-stat-label">Total Sit-In Hours</div>
                   </div>
-
-                  <div className="bento-card py-4 flex flex-col items-center justify-center bg-gradient-to-b from-purple-500/10 to-transparent border-t-purple-500/30">
-                    <div className="flex items-center gap-2 text-purple-400 mb-1">
-                      <Users size={16} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">Unique Students</span>
-                    </div>
-                    <div className="text-2xl font-black text-white">{uniqueStudents}</div>
+                  <div className="admin-modern-stat-card">
+                    <div className="admin-modern-stat-icon"><Users size={16} /></div>
+                    <div className="admin-modern-stat-value">{sitinUniqueStudents}</div>
+                    <div className="admin-modern-stat-label">Unique Students</div>
                   </div>
-
-                  <div className="bento-card py-4 flex flex-col items-center justify-center bg-gradient-to-b from-amber-500/10 to-transparent border-t-amber-500/30">
-                    <div className="flex items-center gap-2 text-amber-400 mb-1">
-                      <Star size={16} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">Avg Rating</span>
-                    </div>
-                    <div className="text-2xl font-black text-white flex items-baseline gap-1">
-                      {avgRating} <span className="text-sm text-gray-500 font-medium">/ 5</span>
-                    </div>
+                  <div className="admin-modern-stat-card">
+                    <div className="admin-modern-stat-icon"><Star size={16} /></div>
+                    <div className="admin-modern-stat-value">{sitinAverageRating}<span className="text-sm font-semibold text-gray-500"> / 5</span></div>
+                    <div className="admin-modern-stat-label">Average Rating</div>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between mt-2">
                   <h3 className="font-bold text-lg">Detailed Records List</h3>
-                  <button onClick={fetchRecords} className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.05)] transition text-gray-300">
+                  <button onClick={fetchRecords} className="admin-modern-refresh">
                     <RefreshCw size={13} /> Refresh
                   </button>
                 </div>
-                <div className="bento-card p-0 overflow-hidden">
+                <div className="admin-modern-table p-0 overflow-hidden">
 
                   <div className="overflow-x-auto">
                     <table className="w-full">
@@ -1443,8 +1579,7 @@ export default function AdminDashboard() {
                   />
                 </div>
               </div>
-              )
-            })()}
+            )}
           </div>
         )}
 
@@ -1518,22 +1653,45 @@ export default function AdminDashboard() {
 
         {/* ── RESERVATIONS TAB ── */}
         {activeTab === 'reservation' && (
-          <div className="flex flex-col gap-6">
-            <div className="flex items-center justify-between">
+          <div className="admin-modern-shell">
+            <div className="admin-modern-hero">
               <div>
-                <h2 className="text-2xl font-bold">Reservation Management</h2>
-                <p className="text-sm text-gray-400">Review requests, control lab PCs, and view audit logs.</p>
+                <h2 className="admin-modern-title">Reservations</h2>
+                <p className="admin-modern-subtitle">Review pending requests, monitor lab PCs, and check reservation activity.</p>
               </div>
               <button
                 onClick={() => { fetchReservations(); fetchManageLab(); fetchLabs() }}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.05)]"
+                className="admin-modern-refresh"
               >
-                Refresh
+                <RefreshCw size={13} /> Refresh
               </button>
             </div>
 
-            <div className="bento-card p-0 overflow-hidden">
-              <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)]">
+            <div className="admin-modern-stat-grid">
+              <div className="admin-modern-stat-card">
+                <div className="admin-modern-stat-icon"><CalendarDays size={16} /></div>
+                <div className="admin-modern-stat-value">{pendingReservations.length}</div>
+                <div className="admin-modern-stat-label">Pending Requests</div>
+              </div>
+              <div className="admin-modern-stat-card">
+                <div className="admin-modern-stat-icon"><CheckCircle2 size={16} /></div>
+                <div className="admin-modern-stat-value">{reservationStatusCounts.approved || 0}</div>
+                <div className="admin-modern-stat-label">Approved</div>
+              </div>
+              <div className="admin-modern-stat-card">
+                <div className="admin-modern-stat-icon"><X size={16} /></div>
+                <div className="admin-modern-stat-value">{reservationStatusCounts.declined || 0}</div>
+                <div className="admin-modern-stat-label">Declined</div>
+              </div>
+              <div className="admin-modern-stat-card">
+                <div className="admin-modern-stat-icon"><FileText size={16} /></div>
+                <div className="admin-modern-stat-value">{reservationLogs.length}</div>
+                <div className="admin-modern-stat-label">Log Entries</div>
+              </div>
+            </div>
+
+            <div className="admin-modern-table p-0 overflow-hidden">
+              <div className="admin-modern-table-head">
                 <h3 className="font-bold">Pending Requests</h3>
               </div>
               <div className="overflow-x-auto">
@@ -1577,21 +1735,30 @@ export default function AdminDashboard() {
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <div className="bento-card">
+              <div className="admin-modern-table p-6">
                 <div className="flex items-center justify-between mb-5">
                   <div>
-                    <h3 className="font-bold text-lg">PC Management</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">Click to toggle availability / maintenance</p>
+                    <h3 className="font-bold text-lg flex items-center gap-2">
+                      <Monitor size={17} className="text-indigo-300" />
+                      Computer Availability
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-0.5">Monitor PCs and toggle available/maintenance status.</p>
                   </div>
-                  <select
-                    value={selectedLabId}
-                    onChange={(e) => setSelectedLabId(e.target.value)}
-                    className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs"
-                  >
-                    {labs.map((lab) => (
-                      <option key={lab.id} value={lab.id} className="bg-[#0d0d1f]">{lab.lab_name}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedLabId}
+                      onChange={(e) => setSelectedLabId(e.target.value)}
+                      className="rounded-lg px-3 py-2 text-xs border"
+                      style={{ backgroundColor: 'var(--app-surface-2)', borderColor: 'var(--app-border)' }}
+                    >
+                      {labs.map((lab) => (
+                        <option key={lab.id} value={lab.id} className="bg-[#0d0d1f]">{lab.lab_name}</option>
+                      ))}
+                    </select>
+                    <button onClick={fetchManageLab} className="admin-modern-refresh">
+                      <RefreshCw size={12} /> Refresh
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mb-4 rounded-xl border border-[rgba(255,255,255,0.06)] bg-black/20 p-3 flex items-center justify-between gap-3">
@@ -1620,26 +1787,32 @@ export default function AdminDashboard() {
                   const reservedCount = manageLabComputers.filter(pc => pc.display_status === 'reserved').length;
                   const maintCount = manageLabComputers.filter(pc => pc.display_status === 'maintenance').length;
                   return (
-                    <div className="grid grid-cols-3 gap-3 mb-5">
+                    <div className="flex flex-wrap gap-2 mb-5">
                       <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
-                        <div className="w-3 h-3 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
+                        <div className="p-1.5 rounded-md bg-emerald-500/15 border border-emerald-500/30">
+                          <Monitor size={12} className="text-emerald-300" />
+                        </div>
                         <div>
-                          <div className="text-lg font-black text-emerald-400">{availCount}</div>
+                          <div className="text-sm font-black text-emerald-400">{availCount}</div>
                           <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/60">Available</div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
-                        <div className="w-3 h-3 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
+                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/8 border border-red-500/20">
+                        <div className="p-1.5 rounded-md bg-red-500/15 border border-red-500/30">
+                          <Lock size={12} className="text-red-300" />
+                        </div>
                         <div>
-                          <div className="text-lg font-black text-amber-400">{reservedCount}</div>
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400/60">Reserved</div>
+                          <div className="text-sm font-black text-red-300">{reservedCount}</div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-red-300/70">Reserved</div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-500/8 border border-gray-500/20">
-                        <div className="w-3 h-3 rounded-full bg-gray-400 shadow-[0_0_8px_rgba(156,163,175,0.3)]" />
+                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/8 border border-red-500/20">
+                        <div className="p-1.5 rounded-md bg-red-500/15 border border-red-500/30">
+                          <Wrench size={12} className="text-red-300" />
+                        </div>
                         <div>
-                          <div className="text-lg font-black text-gray-400">{maintCount}</div>
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400/60">Maintenance</div>
+                          <div className="text-sm font-black text-red-300">{maintCount}</div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-red-300/70">Maintenance</div>
                         </div>
                       </div>
                     </div>
@@ -1652,18 +1825,32 @@ export default function AdminDashboard() {
                     const isAvailable = pc.display_status === 'available';
                     const isReserved = pc.display_status === 'reserved';
                     const isMaintenance = pc.display_status === 'maintenance';
+                    const tileStyle = isAvailable
+                      ? {
+                          background: 'linear-gradient(to bottom, rgba(16,185,129,0.16), rgba(6,95,70,0.18))',
+                          borderColor: 'rgba(16,185,129,0.45)',
+                          color: '#a7f3d0',
+                          opacity: 1,
+                        }
+                      : {
+                          background: 'linear-gradient(to bottom, rgba(239,68,68,0.14), rgba(127,29,29,0.16))',
+                          borderColor: 'rgba(239,68,68,0.40)',
+                          color: '#fecaca',
+                          opacity: isReserved ? 0.9 : 0.86,
+                        }
+                    const iconFrameStyle = isAvailable
+                      ? { background: 'rgba(16,185,129,0.16)', borderColor: 'rgba(16,185,129,0.45)' }
+                      : { background: 'rgba(239,68,68,0.16)', borderColor: 'rgba(239,68,68,0.40)' }
+                    const dotStyle = isAvailable
+                      ? { background: '#34d399', boxShadow: '0 0 6px rgba(52,211,153,0.6)' }
+                      : { background: '#f87171', boxShadow: '0 0 6px rgba(248,113,113,0.45)' }
                     return (
                       <button
                         key={pc.id}
                         onClick={() => canToggleMaintenance && handleComputerStatus(pc.id, isMaintenance ? 'available' : 'maintenance')}
                         disabled={!canToggleMaintenance}
-                        className={`group relative rounded-xl text-xs border-2 transition-all duration-200 flex flex-col items-center justify-center gap-1 min-h-[68px] ${
-                          isMaintenance
-                            ? 'bg-gradient-to-b from-gray-800/60 to-gray-900/60 border-gray-600/40 text-gray-400 hover:border-gray-500/60 hover:bg-gray-700/40'
-                            : isReserved
-                              ? 'bg-gradient-to-b from-amber-500/15 to-amber-900/20 border-amber-500/50 text-amber-200 cursor-not-allowed'
-                              : 'bg-gradient-to-b from-emerald-500/15 to-emerald-900/10 border-emerald-500/40 text-emerald-300 hover:border-emerald-400/70 hover:shadow-[0_0_16px_rgba(52,211,153,0.15)] hover:scale-[1.04]'
-                        }`}
+                        className={`group relative rounded-xl text-xs border-2 transition-all duration-200 flex flex-col items-center justify-center gap-1.5 min-h-[78px] ${canToggleMaintenance ? 'hover:scale-[1.05] cursor-pointer' : 'cursor-not-allowed'}`}
+                        style={tileStyle}
                         title={
                           isReserved
                             ? `Reserved by ${pc.reserved_by_name || 'someone'} • ${pc.reservation_date || ''} ${pc.reservation_time_slot || ''}`.trim()
@@ -1671,26 +1858,25 @@ export default function AdminDashboard() {
                         }
                       >
                         {/* Status indicator dot */}
-                        <div className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${
-                          isAvailable ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)] animate-pulse' 
-                          : isReserved ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]' 
-                          : 'bg-gray-500'
-                        }`} />
+                        <div
+                          className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${isAvailable ? 'animate-pulse' : ''}`}
+                          style={dotStyle}
+                        />
 
                         {/* Icon */}
-                        <div className={`text-sm ${isMaintenance ? 'opacity-40' : ''}`}>
-                          {isAvailable ? '🖥️' : isReserved ? '🔒' : '🔧'}
+                        <div className="p-1.5 rounded-md border" style={iconFrameStyle}>
+                          <Monitor size={15} style={{ color: isAvailable ? '#a7f3d0' : '#fca5a5' }} />
                         </div>
 
                         <span className="font-bold text-[11px] leading-none">PC {pc.computer_number}</span>
 
                         {isReserved && (
-                          <span className="text-[9px] leading-tight max-w-full truncate px-0.5 text-amber-300/80 font-medium">
+                          <span className="text-[9px] leading-tight max-w-full truncate px-0.5 font-medium" style={{ color: '#fca5a5' }}>
                             {pc.reserved_by_name || 'Reserved'}
                           </span>
                         )}
                         {isMaintenance && (
-                          <span className="text-[9px] leading-tight text-gray-500 font-medium">Offline</span>
+                          <span className="text-[9px] leading-tight font-medium" style={{ color: '#fca5a5' }}>Offline</span>
                         )}
                       </button>
                     )
@@ -1698,8 +1884,8 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="bento-card p-0 overflow-hidden">
-                <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)]">
+              <div className="admin-modern-table p-0 overflow-hidden">
+                <div className="admin-modern-table-head">
                   <h3 className="font-bold">Reservation Logs</h3>
                 </div>
                 <div className="max-h-80 overflow-y-auto">
@@ -1716,8 +1902,8 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="bento-card p-0 overflow-hidden">
-              <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)]">
+            <div className="admin-modern-table p-0 overflow-hidden">
+              <div className="admin-modern-table-head">
                 <h3 className="font-bold">All Reservations</h3>
               </div>
               <div className="overflow-x-auto">
@@ -1738,7 +1924,7 @@ export default function AdminDashboard() {
                         <td className="px-6 py-4 text-sm text-gray-400">{r.date}</td>
                         <td className="px-6 py-4 text-sm text-gray-400">{r.time_slot}</td>
                         <td className="px-6 py-4">
-                          <span className="px-2 py-1 rounded text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 uppercase">{r.status}</span>
+                          <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${getReservationStatusBadgeClass(r.status)}`}>{r.status}</span>
                         </td>
                         <td className="px-6 py-4 text-xs text-gray-400">{r.admin_notes || '—'}</td>
                       </tr>
@@ -1760,84 +1946,137 @@ export default function AdminDashboard() {
 
         {/* ── LAB SOFTWARE TAB ── */}
         {activeTab === 'software' && (
-          <div className="flex flex-col gap-6">
-            <div className="flex items-center justify-between">
+          <div className="admin-modern-shell">
+            <div className="admin-modern-hero">
               <div>
-                <h2 className="text-2xl font-bold">Lab Software Availability</h2>
-                <p className="text-sm text-gray-400">Manage software installed per laboratory.</p>
+                <h2 className="admin-modern-title">Lab Software</h2>
+                <p className="admin-modern-subtitle">Each laboratory is shown as its own card with software apps inside.</p>
               </div>
               <button
                 onClick={fetchLabs}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.05)]"
+                className="admin-modern-refresh"
               >
-                Refresh
+                <RefreshCw size={13} /> Refresh
               </button>
             </div>
 
-            <div className="bento-card">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                <div>
-                  <h3 className="font-bold text-lg">Software per Lab</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">Students can only view this list.</p>
-                </div>
-                <select
-                  value={selectedLabId}
-                  onChange={(e) => setSelectedLabId(e.target.value)}
-                  className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-xs"
-                >
-                  {labs.map((lab) => (
-                    <option key={lab.id} value={lab.id} className="bg-[#0d0d1f]">{lab.lab_name}</option>
-                  ))}
-                </select>
+            <div className="admin-modern-stat-grid">
+              <div className="admin-modern-stat-card">
+                <div className="admin-modern-stat-icon"><MonitorPlay size={16} /></div>
+                <div className="admin-modern-stat-value">{labs.length}</div>
+                <div className="admin-modern-stat-label">Total Labs</div>
               </div>
-
-              <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-black/20 p-3">
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <p className="text-xs text-gray-400">
-                    Available software in <span className="text-gray-200 font-semibold">{selectedLab?.lab_name || 'selected lab'}</span>
-                  </p>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <input
-                    type="text"
-                    value={labSoftwareInput}
-                    onChange={(e) => setLabSoftwareInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddLabSoftware() }}
-                    placeholder="e.g. Visual Studio Code"
-                    className="flex-1 bg-black/40 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
-                  />
-                  <button
-                    onClick={handleAddLabSoftware}
-                    disabled={savingLabSoftware}
-                    className="px-3 py-2 rounded-lg text-xs font-bold bg-purple-500/20 border border-purple-500/40 text-purple-300 hover:bg-purple-500/30 disabled:opacity-60"
-                  >
-                    Add Software
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {selectedLabSoftware.length === 0 ? (
-                    <span className="text-xs text-gray-500">No software listed for this lab yet.</span>
-                  ) : (
-                    selectedLabSoftware.map((item) => (
-                      <span
-                        key={item.id}
-                        className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg text-xs bg-indigo-500/15 border border-indigo-500/35 text-indigo-200"
-                      >
-                        {item.software_name}
-                        <button
-                          onClick={() => handleRemoveLabSoftware(item.id)}
-                          disabled={savingLabSoftware}
-                          className="text-indigo-200/70 hover:text-red-300 transition disabled:opacity-60"
-                          title="Remove software"
-                        >
-                          <X size={12} />
-                        </button>
-                      </span>
-                    ))
-                  )}
-                </div>
+              <div className="admin-modern-stat-card">
+                <div className="admin-modern-stat-icon"><FileText size={16} /></div>
+                <div className="admin-modern-stat-value">{totalSoftwareEntries}</div>
+                <div className="admin-modern-stat-label">Software Entries</div>
+              </div>
+              <div className="admin-modern-stat-card">
+                <div className="admin-modern-stat-icon"><CheckCircle2 size={16} /></div>
+                <div className="admin-modern-stat-value">{labsWithSoftware}</div>
+                <div className="admin-modern-stat-label">Labs with Software</div>
+              </div>
+              <div className="admin-modern-stat-card">
+                <div className="admin-modern-stat-icon"><TrendingUp size={16} /></div>
+                <div className="admin-modern-stat-value">{largestSoftwareCount}</div>
+                <div className="admin-modern-stat-label">Most in a Lab</div>
+              </div>
+              <div className="admin-modern-stat-card">
+                <div className="admin-modern-stat-icon"><X size={16} /></div>
+                <div className="admin-modern-stat-value">{labsNeedingSoftware}</div>
+                <div className="admin-modern-stat-label">Labs Needing Setup</div>
               </div>
             </div>
+
+            {labs.length === 0 ? (
+              <div className="admin-modern-table p-8 text-center text-sm text-gray-500">
+                <MonitorPlay size={26} className="mx-auto mb-2 opacity-40" />
+                No laboratories found.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+                {labs.map((lab) => {
+                  const labId = String(lab.id)
+                  const softwareItems = Array.isArray(lab.softwares) ? lab.softwares : []
+                  const currentInput = labSoftwareInputs[labId] ?? ''
+
+                  return (
+                    <div key={lab.id} className="admin-modern-table p-5">
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div>
+                          <h3 className="font-bold text-base flex items-center gap-2">
+                            <MonitorPlay size={15} className="text-indigo-300" />
+                            {lab.lab_name}
+                          </h3>
+                          <p className="text-xs text-gray-500 mt-0.5">Installed software</p>
+                        </div>
+                        <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border"
+                          style={{ borderColor: 'var(--app-border)', backgroundColor: 'var(--app-surface-2)' }}>
+                          <FileText size={11} />
+                          {softwareItems.length} app{softwareItems.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+
+                      <div className="flex gap-2 mb-3">
+                        <input
+                          type="text"
+                          value={currentInput}
+                          onChange={(e) => setLabSoftwareInputs((prev) => ({ ...prev, [labId]: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleAddLabSoftware(lab.id, currentInput) }}
+                          placeholder="e.g. Visual Studio Code"
+                          className="flex-1 rounded-lg px-3 py-2 text-xs focus:outline-none border"
+                          style={{
+                            backgroundColor: 'var(--app-surface-2)',
+                            borderColor: 'var(--app-border)',
+                            color: 'var(--app-fg)',
+                          }}
+                        />
+                        <button
+                          onClick={() => handleAddLabSoftware(lab.id, currentInput)}
+                          disabled={savingLabSoftware}
+                          className="px-3 py-2 rounded-lg text-xs font-bold border disabled:opacity-60 inline-flex items-center gap-1.5"
+                          style={{
+                            backgroundColor: 'var(--app-accent-soft)',
+                            borderColor: 'var(--app-accent)',
+                            color: 'var(--app-accent)',
+                          }}
+                        >
+                          <Plus size={12} />
+                          Add
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {softwareItems.length === 0 ? (
+                          <span className="text-xs text-gray-500 inline-flex items-center gap-1.5">
+                            <FileText size={12} />
+                            No software listed yet.
+                          </span>
+                        ) : (
+                          softwareItems.map((item) => (
+                            <span
+                              key={item.id}
+                              className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg text-xs bg-indigo-500/15 border border-indigo-500/35 text-indigo-200"
+                            >
+                              <FileText size={12} className="text-indigo-300" />
+                              {item.software_name}
+                              <button
+                                onClick={() => handleRemoveLabSoftware(item.id, lab.id)}
+                                disabled={savingLabSoftware}
+                                className="text-indigo-200/70 hover:text-red-300 transition disabled:opacity-60"
+                                title="Remove software"
+                              >
+                                <X size={12} />
+                              </button>
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -1897,26 +2136,26 @@ export default function AdminDashboard() {
 
         {/* ── ANALYTICS TAB ── */}
         {activeTab === 'analytics' && (
-          <div className="flex flex-col gap-6">
-            <div className="flex items-center justify-between">
+          <div className="admin-modern-shell">
+            <div className="admin-modern-hero">
               <div>
-                <h2 className="text-2xl font-bold">Analytics Dashboard</h2>
-                <p className="text-sm text-gray-400">Usage trends, lab utilization, and peak hours.</p>
+                <h2 className="admin-modern-title">Analytics</h2>
+                <p className="admin-modern-subtitle">Track usage trends, lab utilization, and reservation behavior in one view.</p>
               </div>
-              <button onClick={fetchAnalytics} className="px-4 py-2 rounded-xl text-xs font-bold bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.05)]">Refresh</button>
+              <button onClick={fetchAnalytics} className="admin-modern-refresh"><RefreshCw size={13} /> Refresh</button>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <div className="bento-card"><div className="text-xs text-gray-500 uppercase">Total Users</div><div className="text-2xl font-black">{analyticsSummary?.total_users ?? 0}</div></div>
-              <div className="bento-card"><div className="text-xs text-gray-500 uppercase">Total Sessions</div><div className="text-2xl font-black">{analyticsSummary?.total_sessions ?? 0}</div></div>
-              <div className="bento-card"><div className="text-xs text-gray-500 uppercase">Avg Duration</div><div className="text-2xl font-black">{analyticsSummary?.average_duration_minutes ?? 0}m</div></div>
-              <div className="bento-card"><div className="text-xs text-gray-500 uppercase">Active Sessions</div><div className="text-2xl font-black">{analyticsSummary?.active_sessions ?? 0}</div></div>
-              <div className="bento-card"><div className="text-xs text-gray-500 uppercase">Reservations</div><div className="text-2xl font-black">{analyticsSummary?.reservations?.total ?? 0}</div></div>
+            <div className="admin-modern-stat-grid">
+              <div className="admin-modern-stat-card"><div className="admin-modern-stat-icon"><Users size={16} /></div><div className="admin-modern-stat-value">{analyticsSummary?.total_users ?? 0}</div><div className="admin-modern-stat-label">Total Users</div></div>
+              <div className="admin-modern-stat-card"><div className="admin-modern-stat-icon"><CheckCircle2 size={16} /></div><div className="admin-modern-stat-value">{analyticsSummary?.total_sessions ?? 0}</div><div className="admin-modern-stat-label">Total Sessions</div></div>
+              <div className="admin-modern-stat-card"><div className="admin-modern-stat-icon"><Clock size={16} /></div><div className="admin-modern-stat-value">{analyticsSummary?.average_duration_minutes ?? 0}m</div><div className="admin-modern-stat-label">Average Duration</div></div>
+              <div className="admin-modern-stat-card"><div className="admin-modern-stat-icon"><MonitorPlay size={16} /></div><div className="admin-modern-stat-value">{analyticsSummary?.active_sessions ?? 0}</div><div className="admin-modern-stat-label">Active Sessions</div></div>
+              <div className="admin-modern-stat-card"><div className="admin-modern-stat-icon"><CalendarDays size={16} /></div><div className="admin-modern-stat-value">{analyticsSummary?.reservations?.total ?? 0}</div><div className="admin-modern-stat-label">Reservations</div></div>
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <div className="bento-card p-0 overflow-hidden">
-                <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)] font-bold">Sessions by Date</div>
+              <div className="admin-modern-table p-0 overflow-hidden">
+                <div className="admin-modern-table-head">Sessions by Date</div>
                 <div className="max-h-80 overflow-y-auto">
                   {analyticsSessions.map((row) => (
                     <div key={row.date} className="px-6 py-3 border-b border-[rgba(255,255,255,0.03)] flex items-center justify-between">
@@ -1927,8 +2166,8 @@ export default function AdminDashboard() {
                   {analyticsSessions.length === 0 && <div className="p-6 text-sm text-gray-600">No session analytics yet.</div>}
                 </div>
               </div>
-              <div className="bento-card p-0 overflow-hidden">
-                <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)] font-bold">Lab Utilization</div>
+              <div className="admin-modern-table p-0 overflow-hidden">
+                <div className="admin-modern-table-head">Lab Utilization</div>
                 <div className="max-h-80 overflow-y-auto">
                   {analyticsLabs.map((row) => (
                     <div key={row.lab_name} className="px-6 py-3 border-b border-[rgba(255,255,255,0.03)] flex items-center justify-between">
@@ -1942,7 +2181,7 @@ export default function AdminDashboard() {
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <div className="bento-card">
+              <div className="admin-modern-table p-6">
                 <h3 className="font-bold mb-3">Reservation Status</h3>
                 <div className="space-y-2">
                   {Object.entries(analyticsReservations?.by_status || {}).map(([status, count]) => (
@@ -1954,7 +2193,7 @@ export default function AdminDashboard() {
                   {Object.keys(analyticsReservations?.by_status || {}).length === 0 && <div className="text-sm text-gray-600">No reservation data.</div>}
                 </div>
               </div>
-              <div className="bento-card">
+              <div className="admin-modern-table p-6">
                 <h3 className="font-bold mb-3">Peak Hours</h3>
                 <div className="space-y-2">
                   {(analyticsPeak?.hours || []).map((h) => (
@@ -1972,32 +2211,86 @@ export default function AdminDashboard() {
 
         {/* ── REPORTS TAB ── */}
         {activeTab === 'reports' && (
-          <div className="flex flex-col gap-6">
-            <div>
-              <h2 className="text-2xl font-bold">Reports</h2>
-              <p className="text-sm text-gray-400">Generate CSV/PDF exports and download report history.</p>
+          <div className="admin-modern-shell">
+            <div className="admin-modern-hero">
+              <div>
+                <h2 className="admin-modern-title">Reports</h2>
+                <p className="admin-modern-subtitle">Generate CSV/PDF exports, then re-download from report history.</p>
+              </div>
             </div>
 
-            <div className="bento-card">
+            <div className="admin-modern-stat-grid">
+              <div className="admin-modern-stat-card">
+                <div className="admin-modern-stat-icon"><FileSpreadsheet size={16} /></div>
+                <div className="admin-modern-stat-value">{reportHistory.length}</div>
+                <div className="admin-modern-stat-label">Generated Reports</div>
+              </div>
+              <div className="admin-modern-stat-card">
+                <div className="admin-modern-stat-icon"><FileText size={16} /></div>
+                <div className="admin-modern-stat-value">{reportCsvCount}</div>
+                <div className="admin-modern-stat-label">CSV Exports</div>
+              </div>
+              <div className="admin-modern-stat-card">
+                <div className="admin-modern-stat-icon"><FileSpreadsheet size={16} /></div>
+                <div className="admin-modern-stat-value">{reportPdfCount}</div>
+                <div className="admin-modern-stat-label">PDF Exports</div>
+              </div>
+              <div className="admin-modern-stat-card">
+                <div className="admin-modern-stat-icon"><Clock size={16} /></div>
+                <div className="admin-modern-stat-value text-base leading-snug">{latestReportDate}</div>
+                <div className="admin-modern-stat-label">Latest Generated</div>
+              </div>
+            </div>
+
+            <div className="admin-modern-table p-6">
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <select value={reportType} onChange={(e) => setReportType(e.target.value)} className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm">
+                <select
+                  value={reportType}
+                  onChange={(e) => setReportType(e.target.value)}
+                  className="rounded-xl px-4 py-3 text-sm border"
+                  style={{ backgroundColor: 'var(--app-surface-2)', borderColor: 'var(--app-border)' }}
+                >
                   {['sitin', 'reservations', 'testimonials', 'users', 'labs'].map((type) => <option key={type} value={type} className="bg-[#0d0d1f]">{type}</option>)}
                 </select>
-                <select value={reportFormat} onChange={(e) => setReportFormat(e.target.value)} className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm">
+                <select
+                  value={reportFormat}
+                  onChange={(e) => setReportFormat(e.target.value)}
+                  className="rounded-xl px-4 py-3 text-sm border"
+                  style={{ backgroundColor: 'var(--app-surface-2)', borderColor: 'var(--app-border)' }}
+                >
                   <option value="csv" className="bg-[#0d0d1f]">CSV</option>
                   <option value="pdf" className="bg-[#0d0d1f]">PDF</option>
                 </select>
-                <input type="date" value={reportFrom} onChange={(e) => setReportFrom(e.target.value)} className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm" />
-                <input type="date" value={reportTo} onChange={(e) => setReportTo(e.target.value)} className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm" />
-                <input type="text" value={reportStatus} onChange={(e) => setReportStatus(e.target.value)} placeholder="status (optional)" className="bg-black/30 border border-[rgba(255,255,255,0.06)] rounded-xl px-4 py-3 text-sm placeholder-gray-600" />
+                <input
+                  type="date"
+                  value={reportFrom}
+                  onChange={(e) => setReportFrom(e.target.value)}
+                  className="rounded-xl px-4 py-3 text-sm border"
+                  style={{ backgroundColor: 'var(--app-surface-2)', borderColor: 'var(--app-border)' }}
+                />
+                <input
+                  type="date"
+                  value={reportTo}
+                  onChange={(e) => setReportTo(e.target.value)}
+                  className="rounded-xl px-4 py-3 text-sm border"
+                  style={{ backgroundColor: 'var(--app-surface-2)', borderColor: 'var(--app-border)' }}
+                />
+                <input
+                  type="text"
+                  value={reportStatus}
+                  onChange={(e) => setReportStatus(e.target.value)}
+                  placeholder="status (optional)"
+                  className="rounded-xl px-4 py-3 text-sm border placeholder-gray-600"
+                  style={{ backgroundColor: 'var(--app-surface-2)', borderColor: 'var(--app-border)', color: 'var(--app-fg)' }}
+                />
               </div>
               <button onClick={handleGenerateReport} disabled={reportLoading} className="mt-4 px-5 py-2.5 rounded-xl text-sm font-bold bg-gradient-to-r from-red-500 to-orange-500 text-white hover:opacity-90 disabled:opacity-50">
                 {reportLoading ? 'Generating...' : 'Generate Report'}
               </button>
             </div>
 
-            <div className="bento-card p-0 overflow-hidden">
-              <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)] font-bold">Report History</div>
+            <div className="admin-modern-table p-0 overflow-hidden">
+              <div className="admin-modern-table-head">Report History</div>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>

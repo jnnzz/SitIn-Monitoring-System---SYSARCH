@@ -764,7 +764,7 @@ export async function PUT(request, { params }) {
     try {
       const result = await pool.query(
         `UPDATE lab_computers
-         SET is_available = NOT is_available, updated_at = CURRENT_TIMESTAMP
+         SET is_available = NOT is_available
          WHERE id = $1
          RETURNING *`,
         [computerId]
@@ -806,13 +806,12 @@ export async function PUT(request, { params }) {
 
       const result = await pool.query(
         `UPDATE lab_computers
-         SET status = $2,
+         SET status = $2::varchar(20),
              is_available = CASE
-               WHEN $2 = 'maintenance' THEN FALSE
-               WHEN $2 = 'available' THEN TRUE
+               WHEN $2::varchar(20) = 'maintenance'::varchar(20) THEN FALSE
+               WHEN $2::varchar(20) = 'available'::varchar(20) THEN TRUE
                ELSE is_available
-             END,
-             updated_at = CURRENT_TIMESTAMP
+             END
          WHERE id = $1
          RETURNING *`,
         [computerId, status]
