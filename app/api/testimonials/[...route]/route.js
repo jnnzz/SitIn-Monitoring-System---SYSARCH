@@ -46,7 +46,7 @@ export async function GET(request, { params }) {
     const limit = parseLimit(request.nextUrl.searchParams.get('limit'), 12, 40)
     try {
       const result = await pool.query(
-        `SELECT t.id, t.content, t.rating, t.created_at, u.full_name
+        `SELECT t.id, t.content, t.rating, t.created_at, u.full_name, u.avatar_url
          FROM testimonials t
          LEFT JOIN users u ON u.id = t.user_id
          WHERE t.status = 'approved'

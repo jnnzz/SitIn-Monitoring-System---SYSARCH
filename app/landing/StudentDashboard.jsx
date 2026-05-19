@@ -132,6 +132,21 @@ function NotificationPanel({ notifications, unreadCount, onMarkRead, onMarkAll, 
 
 export default function StudentDashboard() {
   const router = useRouter()
+  const getLocalDateString = (date = new Date()) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  // Format a DATE string (YYYY-MM-DD or ISO) without UTC-to-local timezone shift
+  const formatDateLocal = (dateStr) => {
+    if (!dateStr) return '—'
+    const iso = String(dateStr).slice(0, 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return dateStr
+    const [y, m, d] = iso.split('-')
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    return `${months[parseInt(m, 10) - 1]} ${parseInt(d, 10)}, ${y}`
+  }
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -269,7 +284,7 @@ export default function StudentDashboard() {
 
   const fetchLabComputers = useCallback(async () => {
     if (!selectedLabId || !selectedTimeSlot) return
-    const dateToUse = selectedDate || new Date().toISOString().split('T')[0]
+    const dateToUse = selectedDate || getLocalDateString()
     try {
       const params = new URLSearchParams({ date: dateToUse, time_slot: selectedTimeSlot })
       const res = await fetch(`/api/reservations/lab/${selectedLabId}/computers?${params.toString()}`, {
@@ -281,7 +296,7 @@ export default function StudentDashboard() {
 
   const fetchReservationRecommendations = useCallback(async () => {
     if (!selectedTimeSlot) return
-    const dateToUse = selectedDate || new Date().toISOString().split('T')[0]
+    const dateToUse = selectedDate || getLocalDateString()
     setRecommendationLoading(true)
     try {
       const params = new URLSearchParams({ date: dateToUse, time_slot: selectedTimeSlot, limit: '3' })
@@ -510,7 +525,7 @@ export default function StudentDashboard() {
     }
 
     const labName = labs.find(l => String(l.id) === String(selectedLabId))?.lab_name || 'Unknown Lab'
-    const displayDate = selectedDate || new Date().toISOString().split('T')[0]
+    const displayDate = selectedDate || getLocalDateString()
     
     setConfirmReservationModal({
       computer,
@@ -523,7 +538,7 @@ export default function StudentDashboard() {
     if (!confirmReservationModal) return
 
     const { computer } = confirmReservationModal
-    const displayDate = selectedDate || new Date().toISOString().split('T')[0]
+    const displayDate = selectedDate || getLocalDateString()
 
     try {
       const res = await fetch('/api/reservations', {
@@ -1667,7 +1682,7 @@ export default function StudentDashboard() {
                           <tr key={item.id} className="border-b border-[rgba(255,255,255,0.03)]">
                             <td className="px-6 py-4 text-sm">{item.lab_name}</td>
                             <td className="px-6 py-4 text-sm">PC {item.computer_number}</td>
-                            <td className="px-6 py-4 text-sm text-gray-400">{item.date}</td>
+                            <td className="px-6 py-4 text-sm text-gray-400">{formatDateLocal(item.date)}</td>
                             <td className="px-6 py-4 text-sm text-gray-400">{item.time_slot}</td>
                             <td className="px-6 py-4">
                               <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${getReservationStatusBadgeClass(item.status)}`}>

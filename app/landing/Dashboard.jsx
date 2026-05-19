@@ -71,6 +71,17 @@ function formatMinutesCompact(minutes) {
   return `${safe}m`
 }
 
+// Format a DATE string (YYYY-MM-DD or ISO) without timezone shift
+function formatDateLocal(dateStr) {
+  if (!dateStr) return '—'
+  // Take only the first 10 chars (YYYY-MM-DD) to avoid UTC-to-local shift
+  const iso = String(dateStr).slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return dateStr
+  const [y, m, d] = iso.split('-')
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  return `${months[parseInt(m, 10) - 1]} ${parseInt(d, 10)}, ${y}`
+}
+
 export default function AdminDashboard() {
   const router = useRouter()
   const [user, setUser] = useState(null)
@@ -116,6 +127,16 @@ export default function AdminDashboard() {
   const [labSoftwareInputs, setLabSoftwareInputs] = useState({})
   const [savingLabSoftware, setSavingLabSoftware] = useState(false)
   const [savingLabReservationToggle, setSavingLabReservationToggle] = useState(false)
+  // Computer Availability date filter
+  const getLocalDateString = (date = new Date()) => {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+  const [adminAvailDate, setAdminAvailDate] = useState(getLocalDateString)
+  // All Reservations date filter
+  const [reservationDateFilter, setReservationDateFilter] = useState('')
 
   // Testimonials
   const [testimonials, setTestimonials] = useState([])
@@ -213,17 +234,18 @@ export default function AdminDashboard() {
     } catch (e) { console.error(e) }
   }, [])
 
-  const fetchManageLab = useCallback(async () => {
+  const fetchManageLab = useCallback(async (dateOverride) => {
     if (!selectedLabId) return
     try {
-      const res = await fetch(`/api/reservations/lab/${selectedLabId}/manage`, {
+      const dateParam = dateOverride || adminAvailDate || getLocalDateString()
+      const res = await fetch(`/api/reservations/lab/${selectedLabId}/manage?date=${encodeURIComponent(dateParam)}`, {
         headers: { Authorization: `Bearer ${getToken()}` }
       })
       if (!res.ok) return
       const data = await res.json()
       setManageLabComputers(data.computers || [])
     } catch (e) { console.error(e) }
-  }, [selectedLabId])
+  }, [selectedLabId, adminAvailDate])
 
   const fetchTestimonials = useCallback(async () => {
     try {
@@ -743,12 +765,15 @@ export default function AdminDashboard() {
     u.email?.toLowerCase().includes(search.toLowerCase())
   )
   const pendingReservations = reservations.filter((r) => r.status === 'pending')
+  const filteredReservations = reservationDateFilter
+    ? reservations.filter((r) => String(r.date).slice(0, 10) === reservationDateFilter)
+    : reservations
   const usersPage = paginateItems(filteredUsers, tablePages.users, TABLE_PAGE_SIZE)
   const sitinSearchPage = paginateItems(sitinResults, tablePages.sitinSearch, TABLE_PAGE_SIZE)
   const sitinActivePage = paginateItems(activeSessions, tablePages.sitinActive, TABLE_PAGE_SIZE)
   const sitinRecordsPage = paginateItems(sitinRecords, tablePages.sitinRecords, TABLE_PAGE_SIZE)
   const pendingReservationsPage = paginateItems(pendingReservations, tablePages.pendingReservations, TABLE_PAGE_SIZE)
-  const allReservationsPage = paginateItems(reservations, tablePages.allReservations, TABLE_PAGE_SIZE)
+  const allReservationsPage = paginateItems(filteredReservations, tablePages.allReservations, TABLE_PAGE_SIZE)
   const testimonialsPage = paginateItems(testimonials, tablePages.testimonials, TABLE_PAGE_SIZE)
   const reportsPage = paginateItems(reportHistory, tablePages.reports, TABLE_PAGE_SIZE)
   const selectedLab = labs.find((lab) => String(lab.id) === String(selectedLabId))
@@ -1711,7 +1736,7 @@ export default function AdminDashboard() {
                         <td className="px-6 py-4 text-sm">{r.full_name} <span className="text-xs text-gray-500">({r.student_id})</span></td>
                         <td className="px-6 py-4 text-sm">{r.lab_name}</td>
                         <td className="px-6 py-4 text-sm">PC {r.computer_number}</td>
-                        <td className="px-6 py-4 text-sm text-gray-400">{r.date}</td>
+                        <td className="px-6 py-4 text-sm text-gray-400">{formatDateLocal(r.date)}</td>
                         <td className="px-6 py-4 text-sm text-gray-400">{r.time_slot}</td>
                         <td className="px-6 py-4 text-sm text-gray-300">{r.purpose || '—'}</td>
                         <td className="px-6 py-4">
@@ -1736,7 +1761,7 @@ export default function AdminDashboard() {
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               <div className="admin-modern-table p-6">
-                <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
                   <div>
                     <h3 className="font-bold text-lg flex items-center gap-2">
                       <Monitor size={17} className="text-indigo-300" />
@@ -1744,7 +1769,7 @@ export default function AdminDashboard() {
                     </h3>
                     <p className="text-xs text-gray-500 mt-0.5">Monitor PCs and toggle available/maintenance status.</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <select
                       value={selectedLabId}
                       onChange={(e) => setSelectedLabId(e.target.value)}
@@ -1755,10 +1780,29 @@ export default function AdminDashboard() {
                         <option key={lab.id} value={lab.id} className="bg-[#0d0d1f]">{lab.lab_name}</option>
                       ))}
                     </select>
-                    <button onClick={fetchManageLab} className="admin-modern-refresh">
+                    <input
+                      type="date"
+                      value={adminAvailDate}
+                      onChange={(e) => {
+                        const newDate = e.target.value
+                        setAdminAvailDate(newDate)
+                        if (newDate) fetchManageLab(newDate)
+                      }}
+                      className="rounded-lg px-3 py-2 text-xs border"
+                      style={{ backgroundColor: 'var(--app-surface-2)', borderColor: 'var(--app-border)', color: 'var(--app-fg)' }}
+                      title="Filter by reservation date"
+                    />
+                    <button onClick={() => fetchManageLab(adminAvailDate)} className="admin-modern-refresh">
                       <RefreshCw size={12} /> Refresh
                     </button>
                   </div>
+                </div>
+                {/* Showing reservations for date badge */}
+                <div className="mb-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold"
+                  style={{ background: 'rgba(99,102,241,0.10)', borderColor: 'rgba(99,102,241,0.30)', color: '#a5b4fc' }}
+                >
+                  <CalendarDays size={11} />
+                  Showing reservations for: <span className="ml-1">{formatDateLocal(adminAvailDate)}</span>
                 </div>
 
                 <div className="mb-4 rounded-xl border border-[rgba(255,255,255,0.06)] bg-black/20 p-3 flex items-center justify-between gap-3">
@@ -1853,7 +1897,7 @@ export default function AdminDashboard() {
                         style={tileStyle}
                         title={
                           isReserved
-                            ? `Reserved by ${pc.reserved_by_name || 'someone'} • ${pc.reservation_date || ''} ${pc.reservation_time_slot || ''}`.trim()
+                            ? `Reserved by ${pc.reserved_by_name || 'someone'} • ${formatDateLocal(pc.reservation_date)} ${pc.reservation_time_slot || ''}`.trim()
                             : `Click to mark ${isMaintenance ? 'available' : 'maintenance'}`
                         }
                       >
@@ -1903,9 +1947,35 @@ export default function AdminDashboard() {
             </div>
 
             <div className="admin-modern-table p-0 overflow-hidden">
-              <div className="admin-modern-table-head">
+              <div className="admin-modern-table-head flex items-center justify-between gap-3">
                 <h3 className="font-bold">All Reservations</h3>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={reservationDateFilter}
+                    onChange={(e) => { setReservationDateFilter(e.target.value); setTablePage('allReservations', 1) }}
+                    className="rounded-lg px-3 py-1.5 text-xs border"
+                    style={{ backgroundColor: 'var(--app-surface-2)', borderColor: 'var(--app-border)', color: 'var(--app-fg)' }}
+                    title="Filter by date"
+                  />
+                  {reservationDateFilter && (
+                    <button
+                      onClick={() => { setReservationDateFilter(''); setTablePage('allReservations', 1) }}
+                      className="px-2 py-1.5 rounded-lg text-xs font-bold bg-white/5 border border-white/10 text-gray-400 hover:text-white transition"
+                      title="Clear date filter"
+                    >
+                      ✕ Clear
+                    </button>
+                  )}
+                </div>
               </div>
+              {reservationDateFilter && (
+                <div className="px-6 py-2 text-[11px] text-indigo-300 flex items-center gap-1.5 border-b border-[rgba(255,255,255,0.05)]" style={{ background: 'rgba(99,102,241,0.07)' }}>
+                  <CalendarDays size={11} />
+                  Showing reservations for: <span className="font-bold ml-1">{formatDateLocal(reservationDateFilter)}</span>
+                  <span className="ml-2 text-gray-500">({filteredReservations.length} result{filteredReservations.length !== 1 ? 's' : ''})</span>
+                </div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -1921,7 +1991,7 @@ export default function AdminDashboard() {
                         <td className="px-6 py-4 text-sm">{r.full_name}</td>
                         <td className="px-6 py-4 text-sm">{r.lab_name}</td>
                         <td className="px-6 py-4 text-sm">PC {r.computer_number}</td>
-                        <td className="px-6 py-4 text-sm text-gray-400">{r.date}</td>
+                        <td className="px-6 py-4 text-sm text-gray-400">{formatDateLocal(r.date)}</td>
                         <td className="px-6 py-4 text-sm text-gray-400">{r.time_slot}</td>
                         <td className="px-6 py-4">
                           <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${getReservationStatusBadgeClass(r.status)}`}>{r.status}</span>
@@ -1929,7 +1999,7 @@ export default function AdminDashboard() {
                         <td className="px-6 py-4 text-xs text-gray-400">{r.admin_notes || '—'}</td>
                       </tr>
                     ))}
-                    {allReservationsPage.totalItems === 0 && <tr><td colSpan={7} className="text-center text-gray-600 py-8 text-sm">No reservations yet</td></tr>}
+                    {allReservationsPage.totalItems === 0 && <tr><td colSpan={7} className="text-center text-gray-600 py-8 text-sm">{reservationDateFilter ? `No reservations found for ${formatDateLocal(reservationDateFilter)}` : 'No reservations yet'}</td></tr>}
                   </tbody>
                 </table>
               </div>

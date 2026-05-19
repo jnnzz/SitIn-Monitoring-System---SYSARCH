@@ -497,6 +497,9 @@ export async function GET(request, { params }) {
     const labId = parseId(parts[1])
     if (!labId) return notFound()
 
+    // Optional date filter — if provided, show reservations for that specific date only
+    const dateFilter = request.nextUrl.searchParams.get('date') || null
+
     try {
       const labRes = await pool.query(
         'SELECT id, lab_name, total_computers, reservation_enabled FROM labs WHERE id = $1',
@@ -504,25 +507,50 @@ export async function GET(request, { params }) {
       )
       if (labRes.rows.length === 0) return NextResponse.json({ error: 'Lab not found' }, { status: 404 })
 
-      const computersRes = await pool.query(
-        `SELECT c.id, c.computer_number, c.is_available, c.status, c.updated_at,
-                rr.reservation_id, rr.user_id AS reserved_by, rr.reservation_status,
-                rr.full_name AS reserved_by_name, rr.date AS reservation_date, rr.time_slot AS reservation_time_slot
-         FROM lab_computers c
-         LEFT JOIN LATERAL (
-           SELECT r.id AS reservation_id, r.user_id, r.status AS reservation_status, r.date, r.time_slot, u.full_name
-           FROM reservations r
-           JOIN users u ON u.id = r.user_id
-           WHERE r.computer_id = c.id
-             AND r.status IN ('pending', 'approved')
-             AND r.date >= CURRENT_DATE
-           ORDER BY r.date ASC, r.time_slot ASC, r.created_at ASC
-           LIMIT 1
-         ) rr ON TRUE
-         WHERE c.lab_id = $1
-         ORDER BY c.computer_number`,
-        [labId]
-      )
+      let computersRes
+      if (dateFilter) {
+        // When a specific date is selected: show only reservations for that date
+        computersRes = await pool.query(
+          `SELECT c.id, c.computer_number, c.is_available, c.status, c.updated_at,
+                  rr.reservation_id, rr.user_id AS reserved_by, rr.reservation_status,
+                  rr.full_name AS reserved_by_name, rr.date AS reservation_date, rr.time_slot AS reservation_time_slot
+           FROM lab_computers c
+           LEFT JOIN LATERAL (
+             SELECT r.id AS reservation_id, r.user_id, r.status AS reservation_status, r.date, r.time_slot, u.full_name
+             FROM reservations r
+             JOIN users u ON u.id = r.user_id
+             WHERE r.computer_id = c.id
+               AND r.status IN ('pending', 'approved')
+               AND r.date = $2::date
+             ORDER BY r.time_slot ASC, r.created_at ASC
+             LIMIT 1
+           ) rr ON TRUE
+           WHERE c.lab_id = $1
+           ORDER BY c.computer_number`,
+          [labId, dateFilter]
+        )
+      } else {
+        // No date filter: show next upcoming reservation per PC
+        computersRes = await pool.query(
+          `SELECT c.id, c.computer_number, c.is_available, c.status, c.updated_at,
+                  rr.reservation_id, rr.user_id AS reserved_by, rr.reservation_status,
+                  rr.full_name AS reserved_by_name, rr.date AS reservation_date, rr.time_slot AS reservation_time_slot
+           FROM lab_computers c
+           LEFT JOIN LATERAL (
+             SELECT r.id AS reservation_id, r.user_id, r.status AS reservation_status, r.date, r.time_slot, u.full_name
+             FROM reservations r
+             JOIN users u ON u.id = r.user_id
+             WHERE r.computer_id = c.id
+               AND r.status IN ('pending', 'approved')
+               AND r.date >= CURRENT_DATE
+             ORDER BY r.date ASC, r.time_slot ASC, r.created_at ASC
+             LIMIT 1
+           ) rr ON TRUE
+           WHERE c.lab_id = $1
+           ORDER BY c.computer_number`,
+          [labId]
+        )
+      }
 
       const computers = computersRes.rows.map((row) => {
         const isMaintenance = !row.is_available || row.status === 'maintenance'

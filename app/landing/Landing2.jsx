@@ -783,23 +783,39 @@ export default function Landing() {
               {marqueeTestimonials.length > 0 ? (
                 <div className="testimonial-marquee py-2">
                   <div className="testimonial-track pr-3">
-                    {marqueeTestimonials.map((item, index) => (
-                      <div
-                        key={`${item.id}-${index}`}
-                        className="shrink-0 rounded-2xl px-4 py-3.5"
-                        style={{ width: 290, backgroundColor: '#080a18', border: '1px solid #1a1e40' }}
-                      >
-                        <div className="text-xs mb-2" style={{ color: '#f5c542' }}>
-                          {'★'.repeat(Math.max(1, Number(item.rating) || 0))}
+                    {marqueeTestimonials.map((item, index) => {
+                      const initials = (item.full_name || 'S').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+                      const hash = (item.full_name || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+                      const grads = [
+                        'linear-gradient(135deg,#667eea,#764ba2)',
+                        'linear-gradient(135deg,#f093fb,#f5576c)',
+                        'linear-gradient(135deg,#4facfe,#00f2fe)',
+                        'linear-gradient(135deg,#43e97b,#38f9d7)',
+                        'linear-gradient(135deg,#fa709a,#fee140)',
+                        'linear-gradient(135deg,#a18cd1,#fbc2eb)',
+                        'linear-gradient(135deg,#89f7fe,#66a6ff)',
+                      ]
+                      return (
+                      <div key={`${item.id}-${index}`} className="shrink-0 rounded-2xl px-4 py-3.5"
+                        style={{ width: 290, backgroundColor: '#080a18', border: '1px solid #1a1e40' }}>
+                        <div className="flex items-center gap-3 mb-3">
+                          {item.avatar_url ? (
+                            <img src={item.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover border-2 shrink-0" style={{ borderColor: 'rgba(255,255,255,0.15)' }} />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold text-white border-2 shrink-0"
+                              style={{ background: grads[hash % grads.length], borderColor: 'rgba(255,255,255,0.15)' }}>
+                              {initials}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold truncate" style={{ color: 'rgba(255,255,255,0.85)' }}>{item.full_name || 'Student'}</p>
+                            <div className="text-xs" style={{ color: '#f5c542' }}>{'★'.repeat(Math.max(1, Number(item.rating) || 0))}</div>
+                          </div>
                         </div>
-                        <p className="text-sm leading-relaxed line-clamp-4" style={{ color: 'rgba(255,255,255,0.78)' }}>
-                          “{item.content}”
-                        </p>
-                        <p className="text-xs mt-3 font-semibold truncate" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                          — {item.full_name || 'Student'}
-                        </p>
+                        <p className="text-sm leading-relaxed line-clamp-4" style={{ color: 'rgba(255,255,255,0.68)' }}>“{item.content}”</p>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               ) : (

@@ -472,6 +472,62 @@ html.dark {
   border-color: var(--app-accent) !important;
 }
 
+/* ── Landing page light-mode overrides ── */
+/* Catch hardcoded rgba(255,255,255,...) text on the left-side hero */
+.app-auth-shell [style*="rgba(255,255,255"] {
+  color: var(--app-muted) !important;
+}
+
+/* Headings and strong text should use foreground, not muted */
+.app-auth-shell h1[style*="rgba(255,255,255"],
+.app-auth-shell h2[style*="rgba(255,255,255"],
+.app-auth-shell .text-white,
+.app-auth-shell h1.text-white,
+.app-auth-shell h2.text-white,
+.app-auth-shell span.text-white,
+.app-auth-shell span[class*="font-bold"].text-white {
+  color: var(--app-fg) !important;
+}
+
+/* Stat card number tickers */
+.app-auth-shell [style*="#ffffff"],
+.app-auth-shell .text-white {
+  color: var(--app-fg) !important;
+}
+
+/* Stat card and feature icon backgrounds */
+.app-auth-shell .stat-card[style*="#0f1127"] {
+  background-color: var(--app-surface) !important;
+  border-color: var(--app-border) !important;
+}
+
+/* Feature list icon boxes */
+.app-auth-shell div[style*="#0f1127"][style*="#1a1e40"] {
+  background-color: var(--app-surface-2) !important;
+  border-color: var(--app-border) !important;
+}
+
+/* Testimonial section wrapper */
+.app-auth-shell .testimonial-marquee [style*="#080a18"] {
+  background-color: var(--app-surface-2) !important;
+  border-color: var(--app-border) !important;
+}
+
+/* Footer text */
+.app-auth-shell footer [style*="rgba(255,255,255"] {
+  color: var(--app-muted) !important;
+}
+
+/* Testimonial star color should stay gold */
+.app-auth-shell [style*="#f5c542"] {
+  color: #f5c542 !important;
+}
+
+/* Purple accent text in hero headline */
+.app-auth-shell [style*="#B153D7"] {
+  color: var(--app-accent) !important;
+}
+
 .app-auth-shell .theme-auth-button {
   background-color: var(--app-accent) !important;
   border: 1px solid var(--app-accent) !important;
