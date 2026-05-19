@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { LogOut, Users, Bell, Settings, Trash2, Plus, X, BarChart3, TrendingUp, Shield, RefreshCw, MonitorPlay, Search, Clock, CheckCircle2, Star, MessageSquare, CalendarDays, Trophy, FileSpreadsheet, FileText, LineChart, Monitor, Lock, Wrench } from 'lucide-react'
+import { LogOut, Users, Bell, Settings, Trash2, Plus, X, BarChart3, TrendingUp, Shield, RefreshCw, RotateCcw, MonitorPlay, Search, Clock, CheckCircle2, Star, MessageSquare, CalendarDays, Trophy, FileSpreadsheet, FileText, LineChart, Monitor, Lock, Wrench } from 'lucide-react'
 import Image from 'next/image'
 import ccs from '../assets/ccslogo.png'
 import { ToastStack } from '@/components/ui/toast-stack'
@@ -439,6 +439,23 @@ export default function AdminDashboard() {
         type: 'error',
         title: 'Connection error',
       })
+    }
+  }
+
+  const handleResetSessions = async () => {
+    if (!confirm('Reset ALL students back to 30 sessions? This will affect every student.')) return
+    try {
+      const res = await fetch(`${API}/admin/reset-sessions`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } })
+      const data = await res.json().catch(() => null)
+      if (res.ok) {
+        setUsers(prev => prev.map(u => ({ ...u, remaining_sessions: 30 })))
+        pushToast({ type: 'success', title: data?.message || 'All sessions reset to 30' })
+      } else {
+        pushToast({ type: 'error', title: data?.error || 'Failed to reset sessions' })
+      }
+    } catch (e) {
+      console.error(e)
+      pushToast({ type: 'error', title: 'Connection error' })
     }
   }
 
@@ -1198,6 +1215,9 @@ export default function AdminDashboard() {
                   value={search} onChange={e => setSearch(e.target.value)}
                   className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-red-500/50 transition w-full sm:w-72"
                 />
+                <button onClick={handleResetSessions} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 text-sm font-semibold transition shrink-0" title="Reset all students to 30 sessions">
+                  <RotateCcw size={14} /> Reset Sessions
+                </button>
                 <button onClick={fetchUsers} className="p-2.5 rounded-xl bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] border border-[rgba(255,255,255,0.05)] transition shrink-0">
                   <RefreshCw size={16} className={usersLoading ? 'animate-spin text-red-400' : 'text-gray-400'} />
                 </button>
@@ -1209,14 +1229,14 @@ export default function AdminDashboard() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-[rgba(255,255,255,0.05)]">
-                      {['Student', 'Student ID', 'Email', 'Course', 'Year', 'Joined', 'Action'].map(h => (
+                      {['Student', 'Student ID', 'Email', 'Course', 'Year', 'Sessions', 'Joined', 'Action'].map(h => (
                         <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wider px-6 py-4">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {usersPage.totalItems === 0 ? (
-                      <tr><td colSpan={7} className="text-center text-gray-600 py-12 text-sm">No users found</td></tr>
+                      <tr><td colSpan={8} className="text-center text-gray-600 py-12 text-sm">No users found</td></tr>
                     ) : usersPage.items.map(u => (
                       <tr key={u.id} className="user-row border-b border-[rgba(255,255,255,0.03)]">
                         <td className="px-6 py-4">
@@ -1235,6 +1255,11 @@ export default function AdminDashboard() {
                         <td className="px-6 py-4 text-sm text-gray-400">{u.email || <span className="italic text-gray-600">—</span>}</td>
                         <td className="px-6 py-4"><span className="text-xs px-2 py-1 bg-indigo-500/10 text-indigo-400 rounded-lg font-semibold">{u.course || '—'}</span></td>
                         <td className="px-6 py-4 text-sm text-gray-400">{u.year_level || '—'}</td>
+                        <td className="px-6 py-4">
+                          <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${(u.remaining_sessions ?? 0) > 10 ? 'bg-emerald-500/10 text-emerald-400' : (u.remaining_sessions ?? 0) > 0 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400'}`}>
+                            {u.remaining_sessions ?? 0}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 text-xs text-gray-500">{new Date(u.created_at).toLocaleDateString()}</td>
                         <td className="px-6 py-4">
                           {u.role !== 'admin' && (

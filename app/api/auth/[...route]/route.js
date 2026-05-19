@@ -149,7 +149,7 @@ export async function GET(request, { params }) {
 
     try {
       const result = await pool.query(
-        "SELECT id, student_id, full_name, role, course, year_level, remaining_sessions, status, avatar_url, created_at FROM users WHERE role != 'admin' ORDER BY created_at DESC"
+        "SELECT id, student_id, full_name, email, role, course, year_level, remaining_sessions, status, avatar_url, created_at FROM users WHERE role != 'admin' ORDER BY created_at DESC"
       )
       return NextResponse.json(result.rows)
     } catch (error) {
@@ -470,6 +470,20 @@ export async function PUT(request, { params }) {
     } catch (error) {
       console.error(error)
       return NextResponse.json({ error: 'Failed to update status' }, { status: 500 })
+    }
+  }
+
+  if (parts.length === 2 && parts[0] === 'admin' && parts[1] === 'reset-sessions') {
+    const auth = authenticateRequest(request, { includeDetails: true })
+    if (auth.response) return auth.response
+    const adminError = requireAdmin(auth.user)
+    if (adminError) return adminError
+    try {
+      const result = await pool.query("UPDATE users SET remaining_sessions = 30 WHERE role != 'admin' RETURNING id")
+      return NextResponse.json({ message: `Reset ${result.rowCount} students to 30 sessions`, count: result.rowCount })
+    } catch (error) {
+      console.error(error)
+      return NextResponse.json({ error: 'Failed to reset sessions' }, { status: 500 })
     }
   }
 

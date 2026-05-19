@@ -36,19 +36,20 @@ function ensureExportsDir() {
 function csvEscape(value) {
   if (value === null || value === undefined) return ''
   const str = String(value)
+  // Dates/timestamps: use ="..." formula so Excel keeps them as literal text
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return `="${str}"`
   const escaped = str.replace(/"/g, '""')
-  if (/[",\n]/.test(str)) return `"${escaped}"`
-  return escaped
+  return `"${escaped}"`
 }
 
 function toCsv(rows, columns) {
   const headers = columns && columns.length ? columns : rows[0] ? Object.keys(rows[0]) : []
   if (!headers.length) return ''
-  const lines = [headers.join(',')]
+  const lines = [headers.map(h => `"${h}"`).join(',')]
   for (const row of rows) {
     lines.push(headers.map((key) => csvEscape(row[key])).join(','))
   }
-  return lines.join('\n')
+  return '\uFEFF' + lines.join('\n')
 }
 
 function pdfEscape(value) {
@@ -57,52 +58,166 @@ function pdfEscape(value) {
 
 function buildSimplePdf(title, rows, columns) {
   const headers = columns && columns.length ? columns : rows[0] ? Object.keys(rows[0]) : []
-  const printableRows = rows.slice(0, 50).map((row) =>
-    headers.map((key) => `${key}: ${row[key] ?? ''}`).join(' | ')
-  )
+  if (!headers.length) return buildEmptyPdf(title)
 
-  const contentLines = [
-    title,
-    `Generated: ${new Date().toISOString()}`,
-    '',
-    ...printableRows,
-    printableRows.length < rows.length ? '' : '',
-    printableRows.length < rows.length ? `... ${rows.length - printableRows.length} more rows omitted ...` : '',
-  ].filter(Boolean)
+  const pageW = 842, pageH = 595, margin = 36
+  const headerH = 74, rowH = 15, fontSize = 7, hdrFontSize = 8
+  const tableW = pageW - margin * 2
+  const tableTop = pageH - margin - headerH - 14
+  const footerY = margin - 6
 
-  let y = 780
-  const ops = ['BT', '/F1 10 Tf']
-  for (const line of contentLines) {
-    ops.push(`1 0 0 1 40 ${y} Tm (${pdfEscape(line).slice(0, 140)}) Tj`)
-    y -= 14
-    if (y < 40) break
+  // Column widths
+  const wide = new Set(['full_name', 'content', 'purpose', 'feedback', 'admin_notes', 'address', 'email'])
+  const wt = headers.map(h => wide.has(h) ? 3 : h.length > 12 ? 2 : 1)
+  const tw = wt.reduce((a, b) => a + b, 0)
+  const colW = wt.map(w => (w / tw) * tableW)
+
+  function trunc(val, maxW) {
+    const s = String(val ?? '')
+    const mc = Math.floor(maxW / (fontSize * 0.45))
+    return s.length > mc ? s.slice(0, mc - 1) + '..' : s
   }
-  ops.push('ET')
-  const stream = ops.join('\n')
 
+  const maxRows = Math.floor((tableTop - margin - 20) / rowH) - 1
+  const pages = []
+  for (let i = 0; i < rows.length; i += maxRows) pages.push(rows.slice(i, i + maxRows))
+  if (!pages.length) pages.push([])
+
+  const now = new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })
+
+  // Build each page's content stream
+  const pageStreams = []
+  for (let p = 0; p < pages.length; p++) {
+    const pr = pages[p]
+    let ops = []
+
+    // -- Blue header bar --
+    ops.push('q 0.145 0.224 0.463 rg')
+    ops.push(`${margin} ${pageH - margin - headerH} ${tableW} ${headerH} re f Q`)
+
+    // -- School name --
+    ops.push('BT 1 1 1 rg /F2 11 Tf')
+    ops.push(`1 0 0 1 ${margin + 12} ${pageH - margin - 16} Tm`)
+    ops.push('(University of Cebu - Main Campus) Tj')
+    ops.push('ET')
+    ops.push('BT 0.85 0.85 0.95 rg /F1 8 Tf')
+    ops.push(`1 0 0 1 ${margin + 12} ${pageH - margin - 28} Tm`)
+    ops.push('(College of Computer Studies) Tj')
+    ops.push('ET')
+
+    // -- Report title --
+    ops.push('BT 1 1 1 rg /F2 14 Tf')
+    ops.push(`1 0 0 1 ${margin + 12} ${pageH - margin - 46} Tm`)
+    ops.push(`(${pdfEscape(title)}) Tj`)
+    ops.push('ET')
+
+    // -- Subtitle --
+    ops.push('BT 0.8 0.8 0.9 rg /F1 7 Tf')
+    ops.push(`1 0 0 1 ${margin + 12} ${pageH - margin - 58} Tm`)
+    ops.push(`(Generated: ${pdfEscape(now)}  |  Records: ${rows.length}  |  Page ${p + 1} of ${pages.length}) Tj`)
+    ops.push('ET')
+
+    // -- Table header row bg --
+    let y = tableTop
+    ops.push('q 0.22 0.30 0.52 rg')
+    ops.push(`${margin} ${y - rowH} ${tableW} ${rowH} re f Q`)
+
+    // -- Table header text --
+    let cx = margin + 3
+    for (let c = 0; c < headers.length; c++) {
+      ops.push('BT 1 1 1 rg /F2 ' + hdrFontSize + ' Tf')
+      ops.push(`1 0 0 1 ${cx} ${y - rowH + 4} Tm`)
+      ops.push(`(${pdfEscape(headers[c].replace(/_/g, ' ').toUpperCase())}) Tj ET`)
+      cx += colW[c]
+    }
+    y -= rowH
+
+    // -- Data rows --
+    for (let r = 0; r < pr.length; r++) {
+      if (y - rowH < margin + 20) break
+      // Zebra stripe
+      if (r % 2 === 0) {
+        ops.push('q 0.94 0.95 0.97 rg')
+        ops.push(`${margin} ${y - rowH} ${tableW} ${rowH} re f Q`)
+      }
+      // Row text
+      cx = margin + 3
+      for (let c = 0; c < headers.length; c++) {
+        const val = trunc(pr[r][headers[c]], colW[c])
+        ops.push('BT 0.15 0.15 0.15 rg /F1 ' + fontSize + ' Tf')
+        ops.push(`1 0 0 1 ${cx} ${y - rowH + 4} Tm`)
+        ops.push(`(${pdfEscape(val)}) Tj ET`)
+        cx += colW[c]
+      }
+      // Row line
+      ops.push(`q 0.82 0.84 0.86 RG 0.4 w ${margin} ${y - rowH} m ${margin + tableW} ${y - rowH} l S Q`)
+      y -= rowH
+    }
+
+    // -- Table border --
+    ops.push(`q 0.6 0.63 0.67 RG 0.8 w ${margin} ${y} ${tableW} ${tableTop - y} re S Q`)
+
+    // -- Footer --
+    ops.push('BT 0.5 0.5 0.5 rg /F1 7 Tf')
+    ops.push(`1 0 0 1 ${margin} ${footerY} Tm`)
+    ops.push(`(SitIn Monitoring System  -  University of Cebu CCS  -  Page ${p + 1}/${pages.length}) Tj ET`)
+
+    pageStreams.push(ops.join('\n'))
+  }
+
+  // Assemble PDF with sequential object IDs
+  // obj 1: Catalog, obj 2: Pages, obj 3: Font Helvetica, obj 4: Font Helvetica-Bold
+  // then for each page: content stream obj + page obj
+  const totalObjs = 4 + pageStreams.length * 2
+  const kids = pageStreams.map((_, i) => `${6 + i * 2} 0 R`).join(' ')
+
+  let pdf = '%PDF-1.4\n'
+  const offsets = []
+
+  function addObj(id, body) {
+    offsets[id] = Buffer.byteLength(pdf, 'utf8')
+    pdf += `${id} 0 obj\n${body}\nendobj\n`
+  }
+
+  addObj(1, '<< /Type /Catalog /Pages 2 0 R >>')
+  addObj(2, `<< /Type /Pages /Kids [${kids}] /Count ${pageStreams.length} >>`)
+  addObj(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+  addObj(4, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>')
+
+  for (let i = 0; i < pageStreams.length; i++) {
+    const streamData = pageStreams[i]
+    const contentId = 5 + i * 2
+    const pageId = 6 + i * 2
+    addObj(contentId, `<< /Length ${Buffer.byteLength(streamData, 'utf8')} >>\nstream\n${streamData}\nendstream`)
+    addObj(pageId, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`)
+  }
+
+  const xrefStart = Buffer.byteLength(pdf, 'utf8')
+  pdf += `xref\n0 ${totalObjs + 1}\n`
+  pdf += '0000000000 65535 f \n'
+  for (let i = 1; i <= totalObjs; i++) {
+    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`
+  }
+  pdf += `trailer\n<< /Size ${totalObjs + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`
+
+  return Buffer.from(pdf, 'utf8')
+}
+
+function buildEmptyPdf(title) {
+  const stream = `BT /F1 14 Tf 1 0 0 1 40 750 Tm (${pdfEscape(title)}) Tj 0 -24 Td /F1 10 Tf (No data found for this report.) Tj ET`
   const objects = []
   objects.push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')
   objects.push('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n')
-  objects.push(
-    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n'
-  )
+  objects.push(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`)
   objects.push('4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n')
   objects.push(`5 0 obj\n<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream\nendobj\n`)
-
   let pdf = '%PDF-1.4\n'
   const offsets = [0]
-  for (const obj of objects) {
-    offsets.push(Buffer.byteLength(pdf, 'utf8'))
-    pdf += obj
-  }
+  for (const obj of objects) { offsets.push(Buffer.byteLength(pdf, 'utf8')); pdf += obj }
   const xrefStart = Buffer.byteLength(pdf, 'utf8')
-  pdf += `xref\n0 ${objects.length + 1}\n`
-  pdf += '0000000000 65535 f \n'
-  for (let i = 1; i <= objects.length; i++) {
-    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`
-
+  pdf += `xref\n0 6\n0000000000 65535 f \n`
+  for (let i = 1; i <= 5; i++) pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`
+  pdf += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`
   return Buffer.from(pdf, 'utf8')
 }
 
@@ -148,10 +263,10 @@ function buildReportQuery(reportType, filters) {
 
   switch (reportType) {
     case 'sitin': {
-      columns = ['id', 'student_id', 'full_name', 'lab_name', 'purpose', 'started_at', 'ended_at', 'duration_minutes', 'feedback', 'rating']
+      columns = ['id', 'student_id', 'full_name', 'lab_name', 'purpose', 'date', 'started_at', 'ended_at', 'duration_minutes', 'feedback', 'rating']
       addDateFilters('ended_at', filters, params, clauses)
       addLikeFilter('lab_name', filters.lab_name, params, clauses)
-      sql = `SELECT ${columns.join(', ')} FROM sit_in_records`
+      sql = `SELECT id, student_id, full_name, lab_name, purpose, ended_at::date AS date, started_at, ended_at, duration_minutes, feedback, rating FROM sit_in_records`
       break
     }
     case 'reservations': {
