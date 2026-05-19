@@ -338,8 +338,8 @@ export default function Landing() {
               className="object-contain"
             />
             <div className="flex flex-col ml-1">
-              <span className="text-white font-bold text-sm leading-tight">University of Cebu</span>
-              <span className="text-xs font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.4)' }}>College of Computer Studies</span>
+              <span className="font-bold text-sm leading-tight" style={{ color: 'var(--app-fg)' }}>University of Cebu</span>
+              <span className="text-xs font-medium leading-tight" style={{ color: 'var(--app-muted)' }}>College of Computer Studies</span>
             </div>
           </div>
         </BlurFade>
@@ -361,24 +361,24 @@ export default function Landing() {
           {/* Headline */}
           <BlurFade delay={0.3} inView>
             <h1
-              className="font-black text-white leading-tight"
-              style={{ fontSize: 'clamp(2rem, 3.2vw, 3.4rem)', letterSpacing: '-0.025em' }}
+              className="font-black leading-tight"
+              style={{ fontSize: 'clamp(2rem, 3.2vw, 3.4rem)', letterSpacing: '-0.025em', color: 'var(--app-fg)' }}
             >
               Sit-In Monitoring 
-              <span style={{ color: '#B153D7' }}> System</span>
+              <span style={{ color: 'var(--app-accent)' }}> System</span>
             </h1>
           </BlurFade>
 
           {/* Description */}
           <BlurFade delay={0.4} inView>
-            <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)', maxWidth: 420 }}>
+            <p className="text-sm leading-relaxed" style={{ color: 'var(--app-muted)', maxWidth: 420 }}>
               A real-time sit-in monitoring platform for the University of Cebu — CCS. Track student sessions, manage lab occupancy, and gain full visibility over every sit-in activity in one clean dashboard.
             </p>
           </BlurFade>
 
           {/* Stats */}
           <BlurFade delay={0.5} inView>
-            <div className="flex gap-3 text-white flex-wrap">
+            <div className="flex gap-3 flex-wrap">
               {[
                 { label: 'Active Sessions', value: 247, suffix: '' },
                 { label: 'Registered Users', value: 1200, suffix: '+' },
@@ -387,12 +387,12 @@ export default function Landing() {
                 <div
                   key={i}
                   className="stat-card flex-1 rounded-2xl p-4"
-                  style={{ minWidth: 100, backgroundColor: '#0f1127', border: '1px solid #1a1e40' }}
+                  style={{ minWidth: 100, backgroundColor: 'var(--app-surface)', border: '1px solid var(--app-border)' }}
                 >
-                  <div className="text-xl font-black text-white mb-0.5" style={{ color: '#ffffff' }}>
-                    <NumberTicker value={s.value}  className="text-white"/>{s.suffix}
+                  <div className="text-xl font-black mb-0.5" style={{ color: 'var(--app-fg)' }}>
+                    <NumberTicker value={s.value} className="" style={{ color: 'var(--app-fg)' }}/>{s.suffix}
                   </div>
-                  <div className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.35)' }}>{s.label}</div>
+                  <div className="text-xs font-medium" style={{ color: 'var(--app-muted)' }}>{s.label}</div>
                 </div>
               ))}
             </div>
@@ -410,9 +410,9 @@ export default function Landing() {
                 <div key={i} className="flex items-center gap-3">
                   <div
                     className="w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0"
-                    style={{ backgroundColor: '#0f1127', border: '1px solid #1a1e40' }}
+                    style={{ backgroundColor: 'var(--app-surface)', border: '1px solid var(--app-border)' }}
                   >{f.icon}</div>
-                  <span className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>{f.text}</span>
+                  <span className="text-sm" style={{ color: 'var(--app-muted)' }}>{f.text}</span>
                 </div>
               ))}
             </div>
